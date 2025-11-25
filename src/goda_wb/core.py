@@ -18,7 +18,19 @@ def aksi(dl0:float) -> float:
     ksi = 1.0/np.sqrt( (1.0+2.0*pi2*dl/sh4)*th2)
     return ksi
 
-def wave(d:float) -> float:
+
+def cal_wave_length(d: float, T: float) -> float:
+    """
+    波長の算出
+    d:水深
+    T:周期
+    return:
+        波長
+    """
+    dl0 = d / g * T**2 / pi2
+    return d / wave(pi2 * dl0) / pi2
+
+def wave(d: float) -> float:
     """
     微小振幅波の波長
     d:2pi*d/L0
