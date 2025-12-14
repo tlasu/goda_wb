@@ -52,7 +52,7 @@ def wave(d: float) -> float:
     return wave
 
 
-def etai(i, dl0, etl0):
+def etai(i: int, dl0: list[float], etl0: list[float]) -> list[float]:
     if i <= 1:
         etl0[i] = 0.0
         return etl0
@@ -133,8 +133,8 @@ def out(
     mmax = 51
     mp = 51
     nwave = 7
-    hnh0 = [0.0 for i in range(nwave)]
-    hnd = [0.0 for i in range(nwave)]
+    hnh0 = [0.0] * nwave
+    hnd = [0.0] * nwave
 
     epn = [1 / 1000, 0.004, 0.08333, 0.02, 0.1, 0.2, 0.3333333]
     # 代表波高: 1/1000, 1/250, 1/120, 1/50, 1/10, 1/5, 1/3
@@ -245,7 +245,7 @@ def prob(
     return xp, p
 
 
-def prob01(p, xp):
+def prob01(p: list[float], xp: list[float]) -> list[float]:
     mp = len(p)
     psum = 0.0
     for i in range(mp - 1):
@@ -413,10 +413,10 @@ def cal_surf_goda(
     if isinstance(dl0, float):
         dl0 = [dl0]
 
-    iflag = [1 for i in np.arange(len(dl0))]
+    iflag = [1] * len(dl0)
     ipoint = len(dl0)
-    etl0 = [0.0 for i in range(ipoint)]
-    h2l0 = [0.0 for i in range(ipoint)]
+    etl0 = [0.0] * ipoint
+    h2l0 = [0.0] * ipoint
 
     hnh0 = []
     dh0 = []
@@ -431,8 +431,8 @@ def cal_surf_goda(
 
         etl0 = etai(i, dl0, etl0)  # etal0の初期化
 
-        p = [0.0 for i in range(51)]
-        xp = [0.0 for i in range(51)]
+        p = [0.0] * 51
+        xp = [0.0] * 51
 
         for n in range(0, 8):
             j = n
@@ -498,7 +498,6 @@ def cal_surf_goda_dim(
         df["H1_50_dim"] = df["H1_50"] * H0
         df["H1_10_dim"] = df["H1_10"] * H0
         df["H1_5_dim"] = df["H1_5"] * H0
-        df["H1_3_dim"] = df["H1_3"] * H0
         return df
     else:
         return df
