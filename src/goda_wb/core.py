@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from goda_wb.constant import pi2
-
+from goda_wb.constant import dl0_list as goda_dl0_list
 
 def aksi(dl0: float) -> float:
     """
@@ -143,19 +143,30 @@ def out(
     xxx = dl0[i] / h0l0
 
     # calculate representative wave height
-    # hbar,hrms
+    # hbar, hrms
 
-    xb = 0.0
-    xxb = 0.0
-    for k in range(mp - 1):
-        xb = xb + (xp[k + 1] - xp[k]) / 6.0 * (
-            (2.0 * p[k] + p[k + 1]) * xp[k] + (p[k] + 2.0 * p[k + 1]) * xp[k + 1]
-        )
-        xxb = xxb + (xp[k + 1] - xp[k]) / 12.0 * (
-            (3.0 * p[k] + p[k + 1]) * xp[k] ** 2
-            + 2.0 * (p[k] + p[k + 1]) * xp[k] * xp[k + 1]
-            + (p[k] + 3.0 * p[k + 1]) * xp[k + 1] ** 2
-        )
+    # Convert to NumPy arrays for vectorization
+    xp_arr = np.asarray(xp)
+    p_arr = np.asarray(p)
+    
+    # Vectorized computation using array slicing
+    dx = xp_arr[1:] - xp_arr[:-1]
+    p_k = p_arr[:-1]
+    p_k1 = p_arr[1:]
+    xp_k = xp_arr[:-1]
+    xp_k1 = xp_arr[1:]
+    
+    # Vectorized xb calculation
+    xb = np.sum(dx / 6.0 * (
+        (2.0 * p_k + p_k1) * xp_k + (p_k + 2.0 * p_k1) * xp_k1
+    ))
+    
+    # Vectorized xxb calculation
+    xxb = np.sum(dx / 12.0 * (
+        (3.0 * p_k + p_k1) * xp_k ** 2
+        + 2.0 * (p_k + p_k1) * xp_k * xp_k1
+        + (p_k + 3.0 * p_k1) * xp_k1 ** 2
+    ))
     hbarh0 = xb
     hbard = hbarh0 * h0l0 / dl0[i]
 
@@ -173,9 +184,9 @@ def out(
     for k in range(mp - 2, -1, -1):
         ep[k] = ep[k + 1] + 0.5 * (p[k + 1] + p[k]) * (xp[k + 1] - xp[k])
         hep[k] = 0.0
-        for l in range(k, mp - 1, 1):
-            hep[k] = hep[k] + (xp[l + 1] - xp[l]) / 6.0 * (
-                (2.0 * p[l] + p[l + 1]) * xp[l] + (p[l] + 2.0 * p[l + 1]) * xp[l + 1]
+        for j in range(k, mp - 1, 1):
+            hep[k] = hep[k] + (xp[j + 1] - xp[j]) / 6.0 * (
+                (2.0 * p[j] + p[j + 1]) * xp[j] + (p[j] + 2.0 * p[j + 1]) * xp[j + 1]
             )
         if ep[k] != 0:
             hep[k] = hep[k] / ep[k]
@@ -386,9 +397,10 @@ def shoal(dl0: float, h0l0: float) -> float:
 
 
 def cal_surf_goda(
-    tant: float, h0l0: float, dl0: list[float] | None = None
+    tant: float, h0l0: float, dl0: list[float]|float = None
 ) -> pd.DataFrame:
     """
+    合田の砕波変形モデル
     h0l0:波形勾配
     tant:海底勾配
     dl0:水深波長比
@@ -396,131 +408,14 @@ def cal_surf_goda(
     assert isinstance(dl0, list) or dl0 is None
 
     if dl0 is None:
-        dl0 = [
-            1.0,
-            0.9,
-            0.8,
-            0.7,
-            0.6,
-            0.5,
-            0.45,
-            0.425,
-            0.4,
-            0.38,
-            0.36,
-            0.34,
-            0.32,
-            0.3,
-            0.28,
-            0.26,
-            0.24,
-            0.22,
-            0.20,
-            0.19,
-            0.18,
-            0.17,
-            0.16,
-            0.15,
-            0.14,
-            0.13,
-            0.12,
-            0.11,
-            0.10,
-            0.09,
-            0.08,
-            0.075,
-            0.07,
-            0.065,
-            0.06,
-            0.055,
-            0.0525,
-            0.05,
-            0.0475,
-            0.0450,
-            0.0425,
-            0.0400,
-            0.0375,
-            0.0350,
-            0.0325,
-            0.0300,
-            0.0275,
-            0.0250,
-            0.0225,
-            0.0200,
-            0.0190,
-            0.0180,
-            0.0170,
-            0.0160,
-            0.0150,
-            0.0140,
-            0.0130,
-            0.0125,
-            0.0120,
-            0.0110,
-            0.0100,
-            0.009,
-            0.00875,
-            0.0085,
-            0.00825,
-            0.008,
-            0.00775,
-            0.0075,
-            0.00725,
-            0.007,
-            0.00675,
-            0.00650,
-            0.00625,
-            0.00600,
-            0.00575,
-            0.00550,
-            0.00525,
-            0.00500,
-            0.00475,
-            0.00450,
-            0.00425,
-            0.00400,
-            0.00375,
-            0.00350,
-            0.00325,
-            0.00300,
-            0.00275,
-            0.00250,
-            0.00225,
-            0.00200,
-            0.00190,
-            0.00180,
-            0.00170,
-            0.00160,
-            0.00150,
-            0.00140,
-            0.00130,
-            0.00125,
-            0.00120,
-            0.00110,
-            0.00100,
-            0.00090,
-            0.00080,
-            0.00075,
-            0.00065,
-            0.00055,
-            0.00045,
-            0.00035,
-            0.00025,
-            0.00015,
-            0.00005,
-            0.00001,
-            0.000000001,
-        ]
+        dl0 = goda_dl0_list
+    if isinstance(dl0, float):
+        dl0 = [dl0]
+
     iflag = [1 for i in np.arange(len(dl0))]
     ipoint = len(dl0)
     etl0 = [0.0 for i in range(ipoint)]
     h2l0 = [0.0 for i in range(ipoint)]
-
-    pp = [0.0 for i in range(ipoint)]
-
-    qq1 = [0.0 for i in range(ipoint)]
-    qq2 = [0.0 for i in range(ipoint)]
-    qq3 = [0.0 for i in range(ipoint)]
 
     hnh0 = []
     dh0 = []
@@ -547,10 +442,10 @@ def cal_surf_goda(
             ddl0 = max(ddl0, 0)
             x1, x2 = bindx(ddl0, h0l0, tant)
             xp, p = prob(x1, x2, aks, j, pxi, xp, p)
+
         p = prob01(p, xp)
 
         etl0, h2l0 = setup(etl0, dl0, h0l0, p, xp, i, h2l0)
-
         xxx_, hnh_ = out(h0l0, dl0, etl0, p, xp, iflag, i)
 
         hnh0.append(hnh_)
@@ -568,8 +463,9 @@ def cal_surf_goda(
     return df
 
 
-def cal_surf_goda_point(tant, h0l0, dl0):
+def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
     """
+    合田の砕波変形モデル（点計算）
     h0l0:波形勾配
     tant:海底勾配
     dl0:水深波長比
