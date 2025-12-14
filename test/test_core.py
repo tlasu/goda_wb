@@ -101,5 +101,3 @@ def test_cal_surf_goda_matches_expected_values() -> None:
         atol=5e-6,
         rtol=5e-6,
     )
-
-
