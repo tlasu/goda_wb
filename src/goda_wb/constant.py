@@ -1,7 +1,8 @@
 import numpy as np
 
 pi2 = 2.0 * np.pi
-dl0_list = [
+g = 9.81
+goda_dl0_list = [
     1.0,
     0.9,
     0.8,

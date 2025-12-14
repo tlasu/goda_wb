@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-from goda_wb.constant import pi2
-from goda_wb.constant import dl0_list as goda_dl0_list
+from goda_wb.constant import pi2, g, goda_dl0_list
+
 
 def aksi(dl0: float) -> float:
     """
@@ -24,7 +24,6 @@ def cal_wave_length(d: float, T: float) -> float:
     return:
         波長
     """
-    g = 9.81
     dl0 = d / (g * T**2 / pi2)
     return pi2 * d / wave(pi2 * dl0)
 
@@ -148,25 +147,27 @@ def out(
     # Convert to NumPy arrays for vectorization
     xp_arr = np.asarray(xp)
     p_arr = np.asarray(p)
-    
+
     # Vectorized computation using array slicing
     dx = xp_arr[1:] - xp_arr[:-1]
     p_k = p_arr[:-1]
     p_k1 = p_arr[1:]
     xp_k = xp_arr[:-1]
     xp_k1 = xp_arr[1:]
-    
+
     # Vectorized xb calculation
-    xb = np.sum(dx / 6.0 * (
-        (2.0 * p_k + p_k1) * xp_k + (p_k + 2.0 * p_k1) * xp_k1
-    ))
-    
+    xb = np.sum(dx / 6.0 * ((2.0 * p_k + p_k1) * xp_k + (p_k + 2.0 * p_k1) * xp_k1))
+
     # Vectorized xxb calculation
-    xxb = np.sum(dx / 12.0 * (
-        (3.0 * p_k + p_k1) * xp_k ** 2
-        + 2.0 * (p_k + p_k1) * xp_k * xp_k1
-        + (p_k + 3.0 * p_k1) * xp_k1 ** 2
-    ))
+    xxb = np.sum(
+        dx
+        / 12.0
+        * (
+            (3.0 * p_k + p_k1) * xp_k**2
+            + 2.0 * (p_k + p_k1) * xp_k * xp_k1
+            + (p_k + 3.0 * p_k1) * xp_k1**2
+        )
+    )
     hbarh0 = xb
     hbard = hbarh0 * h0l0 / dl0[i]
 
@@ -397,7 +398,7 @@ def shoal(dl0: float, h0l0: float) -> float:
 
 
 def cal_surf_goda(
-    tant: float, h0l0: float, dl0: list[float]|float = None
+    tant: float, h0l0: float, dl0: list[float] | float = None
 ) -> pd.DataFrame:
     """
     合田の砕波変形モデル
@@ -464,67 +465,40 @@ def cal_surf_goda(
 
 
 def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
+    return cal_surf_goda(tant, h0l0, [dl0])
+
+
+def cal_surf_goda_dim(
+    tant: float,
+    H0: float,
+    T: float,
+    dim: bool = False,
+    d:float|list[float]|None=None,
+) -> pd.DataFrame:
     """
-    合田の砕波変形モデル（点計算）
-    h0l0:波形勾配
-    tant:海底勾配
-    dl0:水深波長比
+    合田の砕波変形モデル
+    H0:沖波波高
+    T:周期
+    d:対象水深
     """
-    dl0 = [dl0]
-    iflag = [1]
-    ipoint = 1
-    etl0 = [0.0 for i in range(ipoint)]
-    h2l0 = [0.0 for i in range(ipoint)]
-    pp = [0.0 for i in range(ipoint)]
-    qq1 = [0.0 for i in range(ipoint)]
-    qq2 = [0.0 for i in range(ipoint)]
-    qq3 = [0.0 for i in range(ipoint)]
+    h0l0 = H0 / (g * T**2 / pi2)
 
-    hnh0 = []
-    dh0 = []
-    xp_ = []
-    p_ = []
-    aks_ = []
-
-    for m in range(0, ipoint):
-        i = m
-        xxx = dl0[i]
-        aks = shoal(xxx, h0l0)  # 浅水係数
-        etl0 = etai(i, dl0, etl0)  # etal0の初期化
-
-        p = [0.0 for i in range(51)]
-        xp = [0.0 for i in range(51)]
-
-        for n in range(0, 8):
-            j = n
-            xxx = dl0[i]
-            xil0, pxi = sbeat(h0l0, xxx, j)
-
-            ddl0 = dl0[i] + etl0[i] + xil0
-            ddl0 = max(ddl0, 0)
-            x1, x2 = bindx(ddl0, h0l0, tant)
-
-            xp, p = prob(x1, x2, aks, j, pxi, xp, p)
-
-        p = prob01(p, xp)
-
-        etl0, h2l0 = setup(etl0, dl0, h0l0, p, xp, i, h2l0)
-
-        xxx_, hnh_ = out(h0l0, dl0, etl0, p, xp, iflag, i)
-
-        hnh0.append(hnh_)
-        dh0.append(xxx_)
-        xp_.append(xp)
-        p_.append(p)
-        aks_.append(aks)
-    df = pd.DataFrame(
-        hnh0, columns=["H1_1000", "H1_250", "H1_100", "H1_50", "H1_10", "H1_5", "H1_3"]
-    )
-    df["dh0"] = dh0
-    df["dl0"] = dl0
-    df["etal0"] = etl0
-    df["aks"] = aks_
-    return df
-
-
-# %%
+    if d is None:
+        dl0 = goda_dl0_list
+    elif isinstance(d, float):
+        dl0 = d/(g * T**2 / pi2)
+    else:
+        dl0 = [d[i]/(g * T**2 / pi2) for i in range(len(d))]
+    df = cal_surf_goda(tant, h0l0, dl0)
+    if dim:
+        df["d"] = df["dl0"] * (g * T**2 / pi2)
+        df["H1_3_dim"] = df["H1_3"] * H0
+        df["H1_250_dim"] = df["H1_250"] * H0
+        df["H1_100_dim"] = df["H1_100"] * H0
+        df["H1_50_dim"] = df["H1_50"] * H0
+        df["H1_10_dim"] = df["H1_10"] * H0
+        df["H1_5_dim"] = df["H1_5"] * H0
+        df["H1_3_dim"] = df["H1_3"] * H0
+        return df
+    else:
+        return df
