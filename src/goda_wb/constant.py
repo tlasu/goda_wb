@@ -2,6 +2,32 @@ import numpy as np
 
 pi2 = 2.0 * np.pi
 g = 9.81
+
+MP = 51
+NWAVE = 7
+
+CONVERGENCE_TOL = 1.0e-6
+WAVE_CONVERGENCE_TOL = 0.0003
+
+DEEP_WATER_THRESHOLD = 10.0
+
+GAUSS_HERMITE_ABSCISSAE = [
+    3.2831, 2.3158, 1.3832, 0.4599, -0.4599, -1.3832, -2.3158, -3.2831
+]
+GAUSS_HERMITE_WEIGHTS = [
+    0.0014, 0.0214, 0.1359, 0.3413, 0.3413, 0.1359, 0.0214, 0.0014
+]
+
+REPRESENTATIVE_WAVE_PROBABILITIES = [
+    1 / 1000,   # H1/1000
+    0.004,      # H1/250
+    0.08333,    # H1/120
+    0.02,       # H1/50
+    0.1,        # H1/10
+    0.2,        # H1/5
+    0.3333333,  # H1/3
+]
+
 goda_dl0_list = [
     1.0,
     0.9,
