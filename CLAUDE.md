@@ -9,7 +9,7 @@ This file provides context for AI assistants (Claude Code and others) working on
 **goda-wb** is a Python library implementing Goda's breaking wave deformation model for coastal engineering. It computes wave transformation in the surf zone, accounting for wave breaking, shoaling, and wave setup using probabilistic wave height distributions.
 
 - **Primary reference**: Goda (1975) — irregular wave breaking and surf zone hydrodynamics
-- **Author**: tlasu (sukazuki.mail@gmail.com)
+- **Author**: tlasu
 - **License**: MIT
 - **Version**: 0.1.0
 
