@@ -9,6 +9,11 @@
 ## インストール
 
 ```bash
+# GitHub リポジトリから直接インストール
+pip install git+https://github.com/tlasu/goda_wb.git
+
+# または uv を使用
+uv add git+https://github.com/tlasu/goda_wb.git
 ```
 
 ## 使用方法
@@ -127,7 +132,6 @@ print(f"波長: {L} [m]")
 - Python >= 3.11
 - numpy >= 2.3.4
 - pandas >= 2.3.3
-- scipy >= 1.16.3
 
 ## 開発
 
@@ -146,6 +150,7 @@ pytest
 
 ## ライセンス
 
+MIT License（詳細は [LICENSE](LICENSE) を参照）
 
 ## 参考文献
 
