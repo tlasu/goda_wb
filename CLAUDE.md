@@ -31,7 +31,7 @@ goda_wb/
 │   ├── check_goda.py
 │   ├── check_shuto.py
 │   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts
-│   ├── goda1975/             # Original chart scans (p.96–97) and comparison output
+│   ├── goda1975/             # Original chart scans (p.96–97, Figs. 61–62) and comparison output
 │   ├── draw_on_image.py
 │   ├── draw_on_image2.py
 │   └── run.py
@@ -237,7 +237,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_core.py` | Basic API demonstration |
 | `check_goda.py` | Wave transformation plots across steepness values |
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
-| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners; writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
+| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners, and reproduces Figs. 61–62 (simplified formulas vs. computed values); writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
