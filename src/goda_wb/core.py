@@ -8,6 +8,7 @@ from goda_wb.constant import (
     DEEP_WATER_THRESHOLD,
     GAUSS_HERMITE_ABSCISSAE,
     GAUSS_HERMITE_WEIGHTS,
+    MAX_ITERATIONS,
     MP,
     NWAVE,
     REPRESENTATIVE_WAVE_PROBABILITIES,
@@ -70,21 +71,26 @@ def wave(d: float) -> float:
     if d < 0:
         raise ValueError(f"d は非負の値でなければなりません: {d}")
 
+    if d == 0:
+        return 0.0
+
     if d > DEEP_WATER_THRESHOLD:
         return d
 
     x = np.sqrt(d) if d < 1.0 else d
     e = 99.9
-    while np.abs(e) > WAVE_CONVERGENCE_TOL:
+    for _ in range(MAX_ITERATIONS):
+        if np.abs(e) <= WAVE_CONVERGENCE_TOL:
+            return x
         cothx = 1.0 / np.tanh(x)
         xx = x - (x - d * cothx) / (1.0 + d * (cothx**2 - 1.0))
         e = 1.0 - xx / x
         x = xx
-    return xx
+    raise RuntimeError(f"分散関係の反復計算が収束しませんでした: d={d}")
 
 
 def etai(i: int, dl0: list[float], etl0: list[float]) -> list[float]:
-    """波高水位の線形外挿による初期値推定。
+    """セットアップ量の線形外挿による初期値推定。
 
     Args:
         i: 現在の計算点インデックス
@@ -97,9 +103,9 @@ def etai(i: int, dl0: list[float], etl0: list[float]) -> list[float]:
     if i <= 1:
         etl0[i] = 0.0
     else:
-        etl0[i] = etl0[i - 1] + (etl0[i - 1] - etl0[i - 2]) * (
-            dl0[i] - dl0[i - 1]
-        ) / (dl0[i - 1] - dl0[i - 2])
+        etl0[i] = etl0[i - 1] + (etl0[i - 1] - etl0[i - 2]) * (dl0[i] - dl0[i - 1]) / (
+            dl0[i - 1] - dl0[i - 2]
+        )
     return etl0
 
 
@@ -121,12 +127,7 @@ def sbeat(h0l0: float, dl0: float, j: int) -> tuple[float, float]:
         n = len(GAUSS_HERMITE_ABSCISSAE) - 1
         raise ValueError(f"j は 0-{n} の範囲でなければなりません: {j}")
 
-    xil0 = (
-        GAUSS_HERMITE_ABSCISSAE[j]
-        * 0.01
-        * h0l0
-        / np.sqrt(h0l0 * (1.0 + dl0 / h0l0))
-    )
+    xil0 = GAUSS_HERMITE_ABSCISSAE[j] * 0.01 * h0l0 / np.sqrt(h0l0 * (1.0 + dl0 / h0l0))
     pxi = GAUSS_HERMITE_WEIGHTS[j]
     return xil0, pxi
 
@@ -210,7 +211,6 @@ def out(
     etl0: list[float],
     p: list[float],
     xp: list[float],
-    iflag: list[int],
     i: int,
 ) -> tuple[float, list[float]]:
     """代表波高の算出。
@@ -223,7 +223,6 @@ def out(
         etl0: セットアップ量のリスト
         p: 波高確率密度のリスト
         xp: 波高比の離散点リスト
-        iflag: フラグリスト
         i: 現在の計算点インデックス
 
     Returns:
@@ -297,8 +296,7 @@ def prob(
 
     if j == 0:
         xmax = np.max([x1, 5.0])
-        dx = xmax / float(mp - 1)
-        xp = np.arange(0, xmax + dx, dx)
+        xp = np.linspace(0.0, xmax, mp)
 
     a = 1.416 / aks
     for k in range(0, mp):
@@ -361,7 +359,9 @@ def shoal(dl0: float, h0l0: float) -> float:
     dl = 0.1
     dl1 = 1.0
 
-    while np.abs((dl - dl1) / dl) > CONVERGENCE_TOL:
+    for _ in range(MAX_ITERATIONS):
+        if np.abs((dl - dl1) / dl) <= CONVERGENCE_TOL:
+            break
         dl = dl1
         sh4 = np.sinh(2.0 * pi2 * dl)
         th2 = np.tanh(pi2 * dl)
@@ -379,6 +379,8 @@ def shoal(dl0: float, h0l0: float) -> float:
             / ((sh4 + 2.0 * pi2 * dl) * th2) ** 1.5
         )
         dl1 = dl - f / df
+    else:
+        raise RuntimeError(f"d30l0 の反復計算が収束しませんでした: h0l0={h0l0}")
 
     d30l0 = dl * th2
 
@@ -389,11 +391,15 @@ def shoal(dl0: float, h0l0: float) -> float:
     beta = pi2 / 50.0 * h0l0 * aksi30 * d30l0 ** (2.0 / 7.0)
     dl = 0.1
     dl1 = 99
-    while abs((dl - dl1) / dl) > CONVERGENCE_TOL:
+    for _ in range(MAX_ITERATIONS):
+        if abs((dl - dl1) / dl) <= CONVERGENCE_TOL:
+            break
         dl = dl1
         f = dl * dl - beta * dl ** (-2.0 / 7.0)
         df = 2.0 * dl + 2.0 / 7.0 * beta * dl ** (-9.0 / 7.0)
         dl1 = dl - f / df
+    else:
+        raise RuntimeError(f"d50l0 の反復計算が収束しませんでした: h0l0={h0l0}")
     dl = dl1
     d50l0 = dl1
 
@@ -401,27 +407,27 @@ def shoal(dl0: float, h0l0: float) -> float:
         return aksi30 * (d30l0 / dl0) ** (2.0 / 7.0)
 
     aks50 = aksi30 * (d30l0 / d50l0) ** (2.0 / 7.0)
-    c50 = aks50 * d50l0**1.5 * (
-        np.sqrt(pi2 * h0l0 * aks50) - 2.0 * np.sqrt(3.0) * d50l0
-    )
+    c50 = aks50 * d50l0**1.5 * (np.sqrt(pi2 * h0l0 * aks50) - 2.0 * np.sqrt(3.0) * d50l0)
 
     bb = 2.0 * np.sqrt(3.0) / np.sqrt(pi2 * h0l0) * dl0
     cc = c50 / np.sqrt(pi2 * h0l0) * dl0 ** (-1.5)
     a = aks50
     a1 = 99
 
-    while np.abs((a - a1) / a) > CONVERGENCE_TOL:
+    for _ in range(MAX_ITERATIONS):
+        if np.abs((a - a1) / a) <= CONVERGENCE_TOL:
+            break
         a = a1
         f = a * (np.sqrt(a) - bb) - cc
         df = 1.5 * np.sqrt(a) - bb
         a1 = a - f / df
+    else:
+        raise RuntimeError(f"浅水係数の反復計算が収束しませんでした: dl0={dl0}, h0l0={h0l0}")
 
     return a1
 
 
-def cal_surf_goda(
-    tant: float, h0l0: float, dl0: list[float] | None = None
-) -> pd.DataFrame:
+def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> pd.DataFrame:
     """合田の砕波変形モデル。
 
     指定された海底勾配と波形勾配に対して、各水深での代表波高比を計算する。
@@ -444,7 +450,6 @@ def cal_surf_goda(
     if dl0 is None:
         dl0 = goda_dl0_list
 
-    iflag = [1] * len(dl0)
     ipoint = len(dl0)
     etl0 = [0.0] * ipoint
     h2l0 = [0.0] * ipoint
@@ -474,7 +479,7 @@ def cal_surf_goda(
         p = prob01(p, xp)
 
         etl0, h2l0 = setup(etl0, dl0, h0l0, p, xp, i, h2l0)
-        dh0_val, hnh_val = out(h0l0, dl0, etl0, p, xp, iflag, i)
+        dh0_val, hnh_val = out(h0l0, dl0, etl0, p, xp, i)
 
         hnh0.append(hnh_val)
         dh0.append(dh0_val)
@@ -545,7 +550,7 @@ def cal_surf_goda_dim(
 
     if dim:
         df["d"] = df["dl0"] * L0
-        for col in ["H1_3", "H1_250", "H1_100", "H1_50", "H1_10", "H1_5"]:
+        for col in ["H1_1000", "H1_250", "H1_100", "H1_50", "H1_10", "H1_5", "H1_3"]:
             df[f"{col}_dim"] = df[col] * H0
 
     return df

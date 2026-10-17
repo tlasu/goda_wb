@@ -17,6 +17,7 @@ from goda_wb.constant import g, pi2
 # wave()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("d", [0.5, 1.5, 8.0])
 def test_wave_satisfies_dispersion_relation(d: float) -> None:
     """wave(d) が分散関係 x * tanh(x) = d を満たすかを確認する。"""
@@ -55,6 +56,7 @@ def test_wave_rejects_negative() -> None:
 # aksi()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("dl0", [0.01, 0.05, 0.1, 0.3, 0.5, 1.0])
 def test_aksi_positive_result(dl0: float) -> None:
     """aksi() は正の値を返すこと。"""
@@ -79,6 +81,7 @@ def test_aksi_rejects_non_positive() -> None:
 # ---------------------------------------------------------------------------
 # cal_wave_length()
 # ---------------------------------------------------------------------------
+
 
 def test_cal_wave_length_deep_water() -> None:
     """深水条件での波長が L0 = g*T^2/(2*pi) に近いこと。"""
@@ -113,6 +116,7 @@ def test_cal_wave_length_rejects_invalid(d: float, T: float) -> None:
 # ---------------------------------------------------------------------------
 # shoal()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("dl0", [0.5, 0.3, 0.1, 0.05, 0.01])
 def test_shoal_positive_result(dl0: float) -> None:
@@ -151,6 +155,7 @@ def test_shoal_different_steepness() -> None:
 # ---------------------------------------------------------------------------
 # cal_surf_goda()
 # ---------------------------------------------------------------------------
+
 
 def test_cal_surf_goda_dataframe_shapes_and_values() -> None:
     tant = 0.01
@@ -209,7 +214,7 @@ def test_cal_surf_goda_matches_expected_values() -> None:
         {
             "H1_1000": [1.959090, 1.901165, 1.838882],
             "H1_250": [1.785743, 1.732904, 1.667379],
-            "H1_100": [1.290761, 1.255148, 1.209394],
+            "H1_100": [1.651865, 1.604627, 1.545715],
             "H1_50": [1.536657, 1.498192, 1.445154],
             "H1_10": [1.255194, 1.222334, 1.175370],
             "H1_5": [1.110969, 1.077974, 1.040564],
@@ -254,9 +259,21 @@ def test_cal_surf_goda_h13_less_than_h1_1000() -> None:
     assert (df["H1_3"] <= df["H1_1000"]).all()
 
 
+def test_cal_surf_goda_representative_heights_ordered() -> None:
+    """代表波高が超過確率の順に単調であること。
+
+    H1/1000 >= H1/250 >= H1/100 >= H1/50 >= H1/10 >= H1/5 >= H1/3
+    """
+    df = core.cal_surf_goda(0.01, 0.02, [0.4, 0.3, 0.2, 0.1, 0.05])
+    cols = ["H1_1000", "H1_250", "H1_100", "H1_50", "H1_10", "H1_5", "H1_3"]
+    for hi, lo in zip(cols[:-1], cols[1:], strict=False):
+        assert (df[hi] >= df[lo]).all(), f"{hi} < {lo} となる行があります"
+
+
 # ---------------------------------------------------------------------------
 # cal_surf_goda_dim()
 # ---------------------------------------------------------------------------
+
 
 def test_cal_surf_goda_dim_basic() -> None:
     """基本的な有次元計算が正しく動作すること。"""
@@ -270,6 +287,7 @@ def test_cal_surf_goda_dim_with_dim_flag() -> None:
     df = core.cal_surf_goda_dim(tant=0.01, H0=5.0, T=10.0, dim=True)
     assert "d" in df.columns
     assert "H1_3_dim" in df.columns
+    assert "H1_1000_dim" in df.columns
     assert "H1_250_dim" in df.columns
     assert "H1_100_dim" in df.columns
     assert "H1_50_dim" in df.columns
@@ -318,6 +336,7 @@ def test_cal_surf_goda_dim_rejects_invalid() -> None:
 # ---------------------------------------------------------------------------
 # sbeat()
 # ---------------------------------------------------------------------------
+
 
 def test_sbeat_rejects_invalid_j() -> None:
     """j が範囲外の場合に ValueError を返すこと。"""
