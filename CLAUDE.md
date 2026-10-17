@@ -22,14 +22,16 @@ goda_wb/
 ├── src/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
-│       ├── core.py           # All computation logic (582 lines, 15 functions)
-│       └── constant.py       # Physical constants & model parameters (142 lines)
+│       ├── core.py           # All computation logic (588 lines, 15 functions)
+│       └── constant.py       # Physical constants & model parameters (148 lines)
 ├── test/
-│   └── test_core.py          # Full test suite (411 lines, 58 test cases)
+│   └── test_core.py          # Full test suite (505 lines, 92 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
 │   ├── check_shuto.py
+│   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts
+│   ├── goda1975/             # Original chart scans (p.96–97) and comparison output
 │   ├── draw_on_image.py
 │   ├── draw_on_image2.py
 │   └── run.py
@@ -80,7 +82,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 58 test cases covering all public API functions. All tests must pass before committing.
+Tests live in `test/test_core.py`. There are 92 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57. All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -179,7 +181,9 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 | `MAX_ITERATIONS` | 100 | Iteration cap for `wave()` / `shoal()`; exceeding it raises `RuntimeError` |
 | `REPRESENTATIVE_WAVE_PROBABILITIES` | 7 values | Exceedance probabilities for H1/1000 … H1/3 |
 | `DEEP_WATER_THRESHOLD` | 10.0 | dl0 threshold for deep water classification |
-| `goda_dl0_list` | 114 values | Default d/L₀ evaluation points (0.00001–1.0) |
+| `RAYLEIGH_TAIL_LIMIT` | 4.0 | Upper bound of the wave-height grid in `prob()`, as `a·x` (Rayleigh tail ≈ exp(−16)) |
+| `ETAI_MAX_RATIO` | 2.0 | Cap on the spacing ratio used by `etai()` extrapolation |
+| `goda_dl0_list` | 113 values | Default d/L₀ evaluation points (1e-9–1.0, descending) |
 | `GAUSS_HERMITE_ABSCISSAE/WEIGHTS` | 8 points | Discretized normal distribution for surf beat (see note below) |
 
 ---
@@ -189,6 +193,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 - Tests are in `test/test_core.py`, using standard `pytest`
 - Use `pytest.mark.parametrize` for boundary/edge case sweeps
 - Use numerical regression tests (assert computed values ≈ expected reference values)
+- Validate against the original paper: `GODA1975_CHART_H13` / `GODA1975_CHART_HMAX` hold values read from Goda (1975) Figs. 50–57 (tolerance 0.04)
 - Test property invariants (e.g., `H1_3 <= H1_1000` always holds)
 - Test `ValueError` is raised for invalid inputs
 - No mocking — all tests exercise the real numeric implementation
@@ -210,11 +215,11 @@ uv run pytest -v test/test_core.py::test_function_name
    - `d50l0 < dl0 < d30l0`: power law `aksi30 * (d30l0 / dl0) ** (2/7)`
    - `dl0 <= d50l0`: shallow-water region, solved for Ks by Newton iteration
 
-3. **Probability distribution**: `prob()` uses a Rayleigh distribution with breaking correction to compute the full wave height probability density across `MP=51` points. The breaking limits come from `bindx()` (coefficients 0.18 / 0.12).
+3. **Probability distribution**: `prob()` uses a Rayleigh distribution with breaking correction to compute the full wave height probability density across `MP=51` points on `[0, min(x1, RAYLEIGH_TAIL_LIMIT / a)]`, so the grid follows the breaking limit near shore and stays fine offshore where `x1` is huge. The breaking limits come from `bindx()`, which implements Goda (1975) eq. (3) with `K = 15`, `s = 4/3` and eq. (8) `A1 = 0.18`, `A2 = 0.12` (verified against the original paper, p.66).
 
 4. **Surf beat**: `sbeat()` integrates over 8 surf-beat water level offsets. Despite the `GAUSS_HERMITE_*` names, the constants are a discretized standard normal distribution (weights 0.3413, 0.1359, … are band probabilities summing to 1), not Gauss–Hermite nodes/weights.
 
-5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking. This marching requires `dl0` ordered offshore → onshore on a fine grid, which `cal_surf_goda` guarantees (see **Computation grid** above).
+5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking; the spacing ratio is capped at `ETAI_MAX_RATIO` because user points close to default points would otherwise make the extrapolation blow up. This marching requires `dl0` ordered offshore → onshore on a fine grid, which `cal_surf_goda` guarantees (see **Computation grid** above).
 
 ---
 
@@ -227,6 +232,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_core.py` | Basic API demonstration |
 | `check_goda.py` | Wave transformation plots across steepness values |
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
+| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` on Goda (1975) Figs. 50–57 using calibrated chart-frame corners; writes `goda1975/compare_*.png` |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
@@ -261,7 +267,7 @@ Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a de
 **Don't:**
 - Add new top-level modules without strong justification
 - Change the public API signature of `cal_surf_goda`, `cal_surf_goda_dim`, or `shoal` without updating tests
-- Hardcode physical constants such as `g` or 2π — import them from `constant.py` (empirical model coefficients like 0.18 / 0.12 in `bindx()` or 1.416 in `prob()` currently live inline in `core.py`)
+- Hardcode physical constants such as `g` or 2π — import them from `constant.py` (empirical model coefficients like 0.18 / 0.12 / 15 in `bindx()` or 1.416 in `prob()` currently live inline in `core.py`)
 - Add dependencies to `pyproject.toml` without updating `uv.lock` via `uv sync`
 - Skip linting — CI will fail on ruff errors
 

@@ -258,6 +258,84 @@ def test_cal_surf_goda_rejects_empty_dl0() -> None:
         core.cal_surf_goda(0.01, 0.02, [])
 
 
+def test_cal_surf_goda_fine_dl0_is_stable() -> None:
+    """デフォルト点と近接する細かい dl0 を指定しても結果が発散しないこと。"""
+    tant = 1 / 30
+    h0l0 = 0.01
+    dh0 = np.arange(4.0, 0.0, -0.05)
+
+    df_fine = core.cal_surf_goda(tant, h0l0, list(dh0 * h0l0))
+    df_full = core.cal_surf_goda(tant, h0l0)
+    df_full = df_full[df_full["dh0"] <= 4.0].iloc[::-1]
+
+    assert (df_fine["H1_3"] > 0).all()
+    h13 = np.interp(df_full["dh0"], df_fine["dh0"].iloc[::-1], df_fine["H1_3"].iloc[::-1])
+    np.testing.assert_allclose(h13, df_full["H1_3"], atol=0.05)
+
+
+@pytest.mark.parametrize("h0l0", [0.002, 0.005, 0.01, 0.04])
+def test_cal_surf_goda_deep_water_follows_rayleigh(h0l0: float) -> None:
+    """沖側では H1/3 ≈ Ks・H0 となり、代表波高比がレイリー分布に従うこと。"""
+    df = core.cal_surf_goda(1 / 30, h0l0, [1.0, 0.5])
+    np.testing.assert_allclose(df["H1_3"], df["aks"], rtol=0.01)
+    np.testing.assert_allclose(df["H1_250"] / df["H1_3"], 1.80, rtol=0.01)
+    np.testing.assert_allclose(df["H1_1000"] / df["H1_3"], 1.98, rtol=0.01)
+
+
+# 合田 (1975) 図-50〜57 から読み取った値 (海底勾配, H0'/L0, h/H0', 波高比)。
+# 各曲線のピーク付近を 400 dpi のスキャン画像から読み取った。
+# sample/compare_goda1975.py で原図と計算結果を重ねて確認できる。
+GODA1975_CHART_H13 = [
+    (1 / 10, 0.002, 2.85, 2.53),
+    (1 / 10, 0.005, 2.18, 1.90),
+    (1 / 10, 0.01, 1.83, 1.54),
+    (1 / 10, 0.02, 1.55, 1.26),
+    (1 / 20, 0.002, 3.30, 2.23),
+    (1 / 20, 0.005, 2.53, 1.68),
+    (1 / 20, 0.01, 2.13, 1.37),
+    (1 / 20, 0.02, 1.85, 1.13),
+    (1 / 30, 0.002, 3.43, 2.15),
+    (1 / 30, 0.005, 2.65, 1.60),
+    (1 / 30, 0.01, 2.23, 1.31),
+    (1 / 30, 0.02, 1.98, 1.11),
+    (1 / 100, 0.002, 3.65, 2.04),
+    (1 / 100, 0.005, 2.85, 1.55),
+    (1 / 100, 0.01, 2.40, 1.27),
+    (1 / 100, 0.02, 2.18, 1.06),
+]
+GODA1975_CHART_HMAX = [
+    (1 / 10, 0.002, 2.55, 3.42),
+    (1 / 10, 0.005, 2.63, 3.04),
+    (1 / 10, 0.01, 2.23, 2.47),
+    (1 / 10, 0.02, 1.93, 2.03),
+    (1 / 20, 0.01, 2.60, 2.26),
+    (1 / 30, 0.005, 3.23, 2.60),
+    (1 / 30, 0.01, 2.78, 2.16),
+    (1 / 30, 0.02, 2.63, 1.84),
+    (1 / 100, 0.005, 3.48, 2.49),
+    (1 / 100, 0.01, 3.05, 2.08),
+    (1 / 100, 0.02, 2.83, 1.81),
+]
+
+
+@pytest.mark.parametrize("tant,h0l0,dh0,expected", GODA1975_CHART_H13)
+def test_cal_surf_goda_matches_goda1975_chart_h13(
+    tant: float, h0l0: float, dh0: float, expected: float
+) -> None:
+    """有義波高が合田 (1975) の算定図（図-50〜53）と一致すること。"""
+    df = core.cal_surf_goda(tant, h0l0, [dh0 * h0l0])
+    assert df["H1_3"].iloc[0] == pytest.approx(expected, abs=0.04)
+
+
+@pytest.mark.parametrize("tant,h0l0,dh0,expected", GODA1975_CHART_HMAX)
+def test_cal_surf_goda_matches_goda1975_chart_hmax(
+    tant: float, h0l0: float, dh0: float, expected: float
+) -> None:
+    """最高波高 (Hmax = H1/250) が合田 (1975) の算定図（図-54〜57）と一致すること。"""
+    df = core.cal_surf_goda(tant, h0l0, [dh0 * h0l0])
+    assert df["H1_250"].iloc[0] == pytest.approx(expected, abs=0.04)
+
+
 def test_cal_surf_goda_matches_expected_values() -> None:
     tant = 0.01
     h0l0 = 0.02
@@ -267,16 +345,16 @@ def test_cal_surf_goda_matches_expected_values() -> None:
 
     expected = pd.DataFrame(
         {
-            "H1_1000": [1.959090, 1.901165, 1.838882],
-            "H1_250": [1.785743, 1.732904, 1.667379],
-            "H1_100": [1.651865, 1.604627, 1.545715],
-            "H1_50": [1.536657, 1.498192, 1.445154],
-            "H1_10": [1.255194, 1.222334, 1.175370],
-            "H1_5": [1.110969, 1.077974, 1.040564],
-            "H1_3": [0.987443, 0.957502, 0.923597],
+            "H1_1000": [1.937709, 1.883937, 1.822652],
+            "H1_250": [1.759616, 1.710785, 1.655134],
+            "H1_100": [1.628846, 1.583645, 1.532129],
+            "H1_50": [1.523684, 1.481401, 1.433211],
+            "H1_10": [1.242032, 1.207565, 1.168283],
+            "H1_5": [1.098329, 1.06785, 1.033113],
+            "H1_3": [0.977155, 0.950039, 0.919134],
             "dh0": [20.0, 15.0, 10.0],
             "dl0": [0.4, 0.3, 0.2],
-            "etal0": [0.0, 0.000002, 0.000007],
+            "etal0": [0.000001, 0.000004, 0.000008],
             "aks": [0.976029, 0.948943, 0.918074],
         }
     )
@@ -368,6 +446,13 @@ def test_cal_surf_goda_dim_depth_list() -> None:
     assert df["etal0"].iloc[0] > 0
 
 
+def test_cal_surf_goda_dim_numpy_scalar_depth() -> None:
+    """numpy のスカラー水深も単一値として扱うこと。"""
+    df_int = core.cal_surf_goda_dim(tant=0.01, H0=5.0, T=10.0, d=np.int64(10), dim=True)
+    df_float = core.cal_surf_goda_dim(tant=0.01, H0=5.0, T=10.0, d=10.0, dim=True)
+    pd.testing.assert_frame_equal(df_int, df_float)
+
+
 def test_cal_surf_goda_dim_h13_dim_scaling() -> None:
     """H1/3_dim = H1/3 * H0 であること。"""
     H0 = 5.0
@@ -394,6 +479,15 @@ def test_cal_surf_goda_dim_rejects_invalid() -> None:
 # ---------------------------------------------------------------------------
 # sbeat()
 # ---------------------------------------------------------------------------
+
+
+def test_bindx_uses_goda1975_breaker_index() -> None:
+    """砕波限界が合田 (1975) 式 (3)・(8) (K=15, s=4/3, A1=0.18, A2=0.12) に従うこと。"""
+    ddl0, h0l0, tant = 0.05, 0.02, 1 / 30
+    xxx = (1.0 - np.exp(-1.5 * np.pi * ddl0 * (1.0 + 15.0 * tant ** (4.0 / 3.0)))) / h0l0
+    x1, x2 = core.bindx(ddl0, h0l0, tant)
+    assert x1 == pytest.approx(0.18 * xxx)
+    assert x2 == pytest.approx(0.12 * xxx)
 
 
 def test_sbeat_rejects_invalid_j() -> None:

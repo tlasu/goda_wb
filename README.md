@@ -128,6 +128,20 @@ print(f"波長: {L} [m]")
 **戻り値:**
 - `float`: 波長 [m]
 
+## 原図との比較
+
+合田 (1975) の算定図（図-50〜53：有義波高、図-54〜57：最高波高 Hmax ≒ H1/250）に計算結果を重ねて比較できます。原図は港湾技術研究所報告 14(3) p.96〜97 のスキャン画像です。
+
+```bash
+cd sample && uv run python compare_goda1975.py
+```
+
+![有義波高の算定図との比較](sample/goda1975/compare_H1_3.png)
+
+![最高波高の算定図との比較](sample/goda1975/compare_H1_250.png)
+
+各曲線のピーク付近の値は原図と 0.03 以内で一致し、テスト（`test_cal_surf_goda_matches_goda1975_chart_*`）でも確認しています。
+
 ## 依存関係
 
 - Python >= 3.11

@@ -12,6 +12,12 @@ MAX_ITERATIONS = 100
 
 DEEP_WATER_THRESHOLD = 10.0
 
+# 波高確率密度の離散化範囲の上限 (a * H/H0)。exp(-16) ≈ 1e-7 で実質 0 とみなす
+RAYLEIGH_TAIL_LIMIT = 4.0
+
+# etai() の線形外挿で用いる点間隔比の上限（デフォルトの水深波長比リストの最大値と同じ）
+ETAI_MAX_RATIO = 2.0
+
 GAUSS_HERMITE_ABSCISSAE = [3.2831, 2.3158, 1.3832, 0.4599, -0.4599, -1.3832, -2.3158, -3.2831]
 GAUSS_HERMITE_WEIGHTS = [0.0014, 0.0214, 0.1359, 0.3413, 0.3413, 0.1359, 0.0214, 0.0014]
 

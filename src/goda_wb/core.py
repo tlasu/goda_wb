@@ -6,11 +6,13 @@ import pandas as pd
 from goda_wb.constant import (
     CONVERGENCE_TOL,
     DEEP_WATER_THRESHOLD,
+    ETAI_MAX_RATIO,
     GAUSS_HERMITE_ABSCISSAE,
     GAUSS_HERMITE_WEIGHTS,
     MAX_ITERATIONS,
     MP,
     NWAVE,
+    RAYLEIGH_TAIL_LIMIT,
     REPRESENTATIVE_WAVE_PROBABILITIES,
     WAVE_CONVERGENCE_TOL,
     g,
@@ -103,22 +105,22 @@ def etai(i: int, dl0: list[float], etl0: list[float]) -> list[float]:
     if i <= 1:
         etl0[i] = 0.0
     else:
-        etl0[i] = etl0[i - 1] + (etl0[i - 1] - etl0[i - 2]) * (dl0[i] - dl0[i - 1]) / (
-            dl0[i - 1] - dl0[i - 2]
-        )
+        # 直前の点間隔が極端に狭いと外挿が発散するため、間隔比を上限で抑える
+        ratio = (dl0[i] - dl0[i - 1]) / (dl0[i - 1] - dl0[i - 2])
+        etl0[i] = etl0[i - 1] + (etl0[i - 1] - etl0[i - 2]) * min(ratio, ETAI_MAX_RATIO)
     return etl0
 
 
 def sbeat(h0l0: float, dl0: float, j: int) -> tuple[float, float]:
     """サーフビートによる水位変動の算出。
 
-    ガウス-エルミート求積法の点と重みを用いて、
+    標準正規分布を 8 区間に離散化した代表点と区間確率を用いて、
     サーフビートによる水位変動量と確率を返す。
 
     Args:
         h0l0: 沖波波形勾配 (H0/L0)
         dl0: 水深波長比 (d/L0)
-        j: ガウス求積点のインデックス (0-7)
+        j: 離散化点のインデックス (0-7)
 
     Returns:
         (xil0, pxi): 水位変動量と確率の組
@@ -135,7 +137,9 @@ def sbeat(h0l0: float, dl0: float, j: int) -> tuple[float, float]:
 def bindx(ddl0: float, h0l0: float, tant: float) -> tuple[float, float]:
     """砕波限界指標の算出。
 
-    合田の砕波限界式に基づき、砕波限界波高の上限・下限を計算する。
+    合田 (1975) の砕波限界式 (3)
+    Hb/L0 = A{1 - exp[-1.5 πh/L0 (1 + 15 tan^(4/3) θ)]} に基づき、
+    砕波限界波高の上限 (A1 = 0.18)・下限 (A2 = 0.12) を計算する（式 (8)）。
 
     Args:
         ddl0: セットアップ補正後の水深波長比
@@ -146,7 +150,7 @@ def bindx(ddl0: float, h0l0: float, tant: float) -> tuple[float, float]:
         (x1, x2): 砕波限界の上限と下限（H/H0 の値）
     """
     pi = np.pi
-    xxx = (1.0 - np.exp(-1.5 * pi * ddl0 * (1.0 + 11.0 * tant ** (4.0 / 3.0)))) / h0l0
+    xxx = (1.0 - np.exp(-1.5 * pi * ddl0 * (1.0 + 15.0 * tant ** (4.0 / 3.0)))) / h0l0
     x1 = xxx * 0.18
     x2 = xxx * 0.12
     return x1, x2
@@ -284,8 +288,8 @@ def prob(
         x1: 砕波限界上限 (H/H0)
         x2: 砕波限界下限 (H/H0)
         aks: 浅水係数
-        j: ガウス求積点のインデックス
-        pxi: 求積点の確率重み
+        j: サーフビート離散化点のインデックス
+        pxi: 離散化点の確率
         xp: 波高比の離散点リスト
         p: 波高確率密度のリスト（in-place 更新）
 
@@ -294,11 +298,13 @@ def prob(
     """
     mp = MP
 
+    a = 1.416 / aks
     if j == 0:
-        xmax = np.max([x1, 5.0])
+        # 波高の離散化範囲は砕波上限 x1 まで。ただし沖側では x1 が非常に大きくなるため、
+        # レイリー分布が実質 0 となる波高で打ち切り、刻みが粗くなりすぎないようにする
+        xmax = min(x1, RAYLEIGH_TAIL_LIMIT / a)
         xp = np.linspace(0.0, xmax, mp)
 
-    a = 1.416 / aks
     for k in range(0, mp):
         p0 = 2.0 * a * a * xp[k] * np.exp(-((a * xp[k]) ** 2))
         p01 = 2.0 * a * a * x1 * np.exp(-((a * x1) ** 2))
@@ -341,7 +347,7 @@ def shoal(dl0: float, h0l0: float) -> float:
     浅水域における波高変化を表す浅水係数を、3つの領域に分けて計算する:
       - dl0 >= d30l0: 微小振幅波理論による浅水係数
       - d50l0 < dl0 < d30l0: べき乗則による遷移領域
-      - dl0 <= d50l0: 砕波後のエネルギー散逸領域
+      - dl0 <= d50l0: 浅海域の非線形浅水変形（首藤の式に基づく）領域
 
     Args:
         dl0: 水深沖波波長比 (d/L0)
@@ -567,8 +573,8 @@ def cal_surf_goda_dim(
 
     if d is None:
         dl0: list[float] | None = None
-    elif isinstance(d, (int, float)):
-        dl0 = [d / L0]
+    elif np.ndim(d) == 0:
+        dl0 = [float(d) / L0]
     else:
         dl0 = [di / L0 for di in d]
 
