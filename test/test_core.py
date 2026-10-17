@@ -226,15 +226,36 @@ def test_cal_surf_goda_order_independent() -> None:
         df_shuf.set_index("dl0").sort_index(),
         df_desc.set_index("dl0").sort_index(),
     )
-    # 最も沖側の点が起点（セットアップ 0）、最も岸側の点でセットアップ最大
-    assert df_shuf.loc[df_shuf["dl0"].idxmax(), "etal0"] == 0.0
+    # 最も岸側の点でセットアップ最大
     assert df_shuf["etal0"].idxmax() == df_shuf["dl0"].idxmin()
 
 
-def test_cal_surf_goda_rejects_duplicate_dl0() -> None:
-    """dl0 に重複がある場合に ValueError を返すこと。"""
+def test_cal_surf_goda_sparse_matches_default_profile() -> None:
+    """少ない計算点を指定しても、デフォルトの細かい断面と同じ結果になること。"""
+    tant = 0.01
+    h0l0 = 0.02
+    sparse = [0.1, 0.03, 0.01]
+
+    df_full = core.cal_surf_goda(tant, h0l0)
+    df_sparse = core.cal_surf_goda(tant, h0l0, sparse)
+
+    expected = pd.concat(
+        [df_full[np.isclose(df_full["dl0"], v)] for v in sparse], ignore_index=True
+    )
+    pd.testing.assert_frame_equal(df_sparse, expected)
+
+
+def test_cal_surf_goda_duplicate_dl0() -> None:
+    """dl0 に重複がある場合は同じ結果を返すこと。"""
+    df = core.cal_surf_goda(0.01, 0.02, [0.1, 0.05, 0.05])
+    assert len(df) == 3
+    pd.testing.assert_series_equal(df.iloc[1], df.iloc[2], check_names=False)
+
+
+def test_cal_surf_goda_rejects_empty_dl0() -> None:
+    """dl0 が空の場合に ValueError を返すこと。"""
     with pytest.raises(ValueError):
-        core.cal_surf_goda(0.01, 0.02, [0.1, 0.05, 0.05])
+        core.cal_surf_goda(0.01, 0.02, [])
 
 
 def test_cal_surf_goda_matches_expected_values() -> None:
@@ -342,8 +363,8 @@ def test_cal_surf_goda_dim_depth_list() -> None:
     df = core.cal_surf_goda_dim(tant=0.01, H0=5.0, T=10.0, d=depths, dim=True)
     assert len(df) == len(depths)
     np.testing.assert_allclose(df["d"].to_numpy(), depths, rtol=0.01)
-    # 浅い順に指定しても、最も深い点を起点に岸側でセットアップが生じる
-    assert df["etal0"].iloc[-1] == 0.0
+    # 浅い順に指定しても、岸側ほどセットアップが大きい
+    assert df["etal0"].iloc[0] > df["etal0"].iloc[-1]
     assert df["etal0"].iloc[0] > 0
 
 
