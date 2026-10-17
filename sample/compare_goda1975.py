@@ -3,6 +3,8 @@
 原図: 合田良実 (1975) 浅海域における波浪の砕波変形, 港湾技術研究所報告 14(3)
   - p.96 図-50〜53 砕波帯内の有義波高の算定図 (H1/3)
   - p.97 図-54〜57 砕波帯内の最高波高の算定図 (Hmax = H1/250)
+  - p.99 図-61 砕波帯内の有義波高の略算式と計算値の比較 (H0'/L0 = 0.02)
+  - p.100 図-62 砕波帯内の最高波高の略算式と計算値の比較 (H0'/L0 = 0.04)
 
 スキャン画像 (400 dpi) 上の各図の枠の四隅の画素座標を読み取り、双一次補間で
 (h/H0', H/H0') を画素座標へ変換して描画する。ただし図-52 は図枠の下辺が方眼と
@@ -60,6 +62,29 @@ CHARTS = {
         ],
     },
 }
+
+
+# 図-61・62: 原図の記号が合田の計算値、線が略算式。勾配 1/10 と 1/100 を比較する。
+APPROX_FIGS = [
+    {
+        "image": "goda1975_p99_fig61.png",
+        "title": "図-61 有義波高の略算式と計算値 ($H_0'/L_0=0.02$)",
+        "h0l0": 0.02,
+        "column": "H1_3",
+        "approx": "H1_3",
+        "ymax": 1.5,
+        "corners": {"LB": (213.0, 727.0), "RB": (1143.0, 726.0), "LT": (211.0, 42.0), "RT": (1141.0, 39.5)},
+    },
+    {
+        "image": "goda1975_p100_fig62.png",
+        "title": "図-62 最高波高の略算式と計算値 ($H_0'/L_0=0.04$)",
+        "h0l0": 0.04,
+        "column": "H1_250",
+        "approx": "Hmax",
+        "ymax": 2.5,
+        "corners": {"LB": (110.5, 1203.0), "RB": (1054.0, 1204.5), "LT": (115.0, 45.5), "RT": (1055.0, 44.5)},
+    },
+]
 
 
 def to_pixel(x, y, corners, ymax):
@@ -124,8 +149,37 @@ def draw(column):
     return fig
 
 
+def draw_approx():
+    """図-61・62 に厳密計算（実線）と略算式（破線）を重ねる。"""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7.5))
+    dh0 = np.arange(4.0, 0.0, -0.02)
+    for spec, ax in zip(APPROX_FIGS, axes, strict=True):
+        img = mpimg.imread(IMG_DIR / spec["image"])
+        ax.imshow(img, cmap="gray", alpha=0.6)
+        for tant, color, label in [(1 / 10, "tab:red", "1/10"), (1 / 100, "tab:blue", "1/100")]:
+            dl0 = list(dh0 * spec["h0l0"])
+            df = core.cal_surf_goda(tant, spec["h0l0"], dl0)
+            da = core.cal_surf_goda_approx(tant, spec["h0l0"], dl0)
+            for y, style, lw, kind in [
+                (df[spec["column"]], "-", 2.5, "厳密計算"),
+                (da[spec["approx"]], "--", 1.8, "略算式"),
+            ]:
+                px, py = to_pixel(df["dh0"], y, spec["corners"], spec["ymax"])
+                ax.plot(px, py, style, color=color, linewidth=lw, alpha=0.8,
+                        label=f"{label} {kind}")
+        ax.set_title(spec["title"])
+        ax.set_axis_off()
+        ax.legend(loc="upper left", fontsize=9)
+    fig.suptitle("合田 (1975) 原図（灰色：記号が計算値、線が略算式）と goda_wb")
+    fig.tight_layout()
+    return fig
+
+
 if __name__ == "__main__":
     for column in CHARTS:
         fig = draw(column)
         fig.savefig(IMG_DIR / f"compare_{column}.png", dpi=80)
         plt.close(fig)
+    fig = draw_approx()
+    fig.savefig(IMG_DIR / "compare_fig61_62.png", dpi=80)
+    plt.close(fig)
