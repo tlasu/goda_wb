@@ -22,10 +22,10 @@ goda_wb/
 ├── src/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — re-exports `core`
-│       ├── core.py           # All computation logic (551 lines, 18 functions)
-│       └── constant.py       # Physical constants & model parameters (145 lines)
+│       ├── core.py           # All computation logic (570 lines, 14 functions)
+│       └── constant.py       # Physical constants & model parameters (142 lines)
 ├── test/
-│   └── test_core.py          # Full test suite (334 lines, 50 test cases)
+│   └── test_core.py          # Full test suite (390 lines, 56 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
@@ -80,7 +80,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 50 test cases covering all public API functions. All tests must pass before committing.
+Tests live in `test/test_core.py`. There are 56 test cases covering all public API functions. All tests must pass before committing.
 
 ### Linting and Formatting
 
