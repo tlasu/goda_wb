@@ -427,37 +427,17 @@ def shoal(dl0: float, h0l0: float) -> float:
     return a1
 
 
-def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> pd.DataFrame:
-    """合田の砕波変形モデル。
-
-    指定された海底勾配と波形勾配に対して、各水深での代表波高比を計算する。
-    セットアップは沖側から岸側へ順に積み上げるため、内部では dl0 を降順に並べて
-    計算し、結果は入力と同じ順序で返す。
+def _march_profile(tant: float, h0l0: float, dl0: list[float]) -> pd.DataFrame:
+    """沖側から岸側へ順に砕波変形を計算する。
 
     Args:
         tant: 海底勾配 (tan θ)
         h0l0: 沖波波形勾配 (H0/L0)
-        dl0: 水深波長比 (d/L0) のリスト。None の場合はデフォルト値を使用。
-            重複する値は指定できない。
+        dl0: 降順（沖側→岸側）に並んだ重複のない水深波長比のリスト
 
     Returns:
-        各水深における代表波高比等を含む DataFrame。
-        カラム: H1_1000, H1_250, H1_100, H1_50, H1_10, H1_5, H1_3,
-               dh0, dl0, etal0, aks
+        dl0 と同じ順序の各水深における代表波高比等を含む DataFrame
     """
-    if tant < 0:
-        raise ValueError(f"海底勾配は非負でなければなりません: {tant}")
-    if h0l0 <= 0:
-        raise ValueError(f"波形勾配は正の値でなければなりません: {h0l0}")
-
-    if dl0 is None:
-        dl0 = goda_dl0_list
-    if len(set(dl0)) != len(dl0):
-        raise ValueError("dl0 に重複する値が含まれています")
-
-    order = sorted(range(len(dl0)), key=lambda k: dl0[k], reverse=True)
-    dl0 = [float(dl0[k]) for k in order]
-
     ipoint = len(dl0)
     etl0 = [0.0] * ipoint
     h2l0 = [0.0] * ipoint
@@ -502,15 +482,49 @@ def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> p
     df["dl0"] = dl0
     df["etal0"] = etl0
     df["aks"] = aks_
-    df.index = order
-    return df.sort_index()
+    return df
+
+
+def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> pd.DataFrame:
+    """合田の砕波変形モデル。
+
+    指定された海底勾配と波形勾配に対して、各水深での代表波高比を計算する。
+    セットアップは沖側から岸側へ順に積み上げる必要があるため、dl0 を指定した場合は
+    デフォルトの水深波長比リストに dl0 を加えた細かい計算点で沖側から計算し、
+    dl0 の各点の結果を入力と同じ順序で返す。
+
+    Args:
+        tant: 海底勾配 (tan θ)
+        h0l0: 沖波波形勾配 (H0/L0)
+        dl0: 水深波長比 (d/L0) のリスト。None の場合はデフォルト値を使用。
+            並び順は任意で、重複する値には同じ結果を返す。
+
+    Returns:
+        各水深における代表波高比等を含む DataFrame。
+        カラム: H1_1000, H1_250, H1_100, H1_50, H1_10, H1_5, H1_3,
+               dh0, dl0, etal0, aks
+    """
+    if tant < 0:
+        raise ValueError(f"海底勾配は非負でなければなりません: {tant}")
+    if h0l0 <= 0:
+        raise ValueError(f"波形勾配は正の値でなければなりません: {h0l0}")
+
+    if dl0 is None:
+        return _march_profile(tant, h0l0, goda_dl0_list)
+
+    targets = [float(v) for v in dl0]
+    if not targets:
+        raise ValueError("dl0 が空です")
+    dl0_min = min(targets)
+    grid = sorted({v for v in goda_dl0_list if v > dl0_min} | set(targets), reverse=True)
+
+    df = _march_profile(tant, h0l0, grid)
+    row = {v: k for k, v in enumerate(grid)}
+    return df.iloc[[row[v] for v in targets]].reset_index(drop=True)
 
 
 def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
     """単一水深での合田の砕波変形モデル計算。
-
-    セットアップを考慮するため、デフォルトの水深波長比リストのうち dl0 より
-    沖側の点から dl0 まで計算し、dl0 の結果のみを返す。
 
     Args:
         tant: 海底勾配 (tan θ)
@@ -520,9 +534,7 @@ def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
     Returns:
         代表波高比等を含む DataFrame（1行）
     """
-    profile = [v for v in goda_dl0_list if v > dl0] + [dl0]
-    df = cal_surf_goda(tant, h0l0, profile)
-    return df.iloc[[-1]].reset_index(drop=True)
+    return cal_surf_goda(tant, h0l0, [dl0])
 
 
 def cal_surf_goda_dim(

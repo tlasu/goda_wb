@@ -22,10 +22,10 @@ goda_wb/
 ├── src/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
-│       ├── core.py           # All computation logic (570 lines, 14 functions)
+│       ├── core.py           # All computation logic (582 lines, 15 functions)
 │       └── constant.py       # Physical constants & model parameters (142 lines)
 ├── test/
-│   └── test_core.py          # Full test suite (390 lines, 56 test cases)
+│   └── test_core.py          # Full test suite (411 lines, 58 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
@@ -80,7 +80,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 56 test cases covering all public API functions. All tests must pass before committing.
+Tests live in `test/test_core.py`. There are 58 test cases covering all public API functions. All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -120,13 +120,13 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 |----------|-----------|-------------|
 | `cal_surf_goda` | `(tant, h0l0, dl0=None) → DataFrame` | Main dimensionless wave transformation calculation |
 | `cal_surf_goda_dim` | `(tant, H0, T, dim=False, d=None) → DataFrame` | Dimensional wrapper (SI units) |
-| `cal_surf_goda_point` | `(tant, h0l0, dl0) → DataFrame` | Single-point result, computed by marching from offshore along `goda_dl0_list` so setup is included |
-
-`cal_surf_goda` accepts `dl0` in any order: it sorts internally from offshore (largest) to onshore (smallest), marches setup in that direction, and returns rows in the caller's order. Duplicate `dl0` values raise `ValueError`. Setup is accumulated only over the points given, so a sparse `dl0` list gives a coarser setup estimate.
+| `cal_surf_goda_point` | `(tant, h0l0, dl0) → DataFrame` | Single-point calculation (same as `cal_surf_goda(tant, h0l0, [dl0])`) |
 | `shoal` | `(dl0, h0l0) → float` | Shoaling coefficient (3-region model) |
 | `aksi` | `(dl0) → float` | Linear (small-amplitude) shoaling coefficient |
 | `cal_wave_length` | `(d, T) → float` | Wave length from depth and period |
 | `wave` | `(d) → float` | Solve dispersion relation: x·tanh(x) = d |
+
+**Computation grid.** Setup must be marched from offshore to onshore over a fine grid. When `dl0` is given, `cal_surf_goda` merges it with the points of `goda_dl0_list` deeper than `min(dl0)`, marches over that merged grid (sorted descending) via the private `_march_profile()`, and returns only the requested rows, in the caller's order. Consequently `dl0` may be in any order, may contain duplicates (identical rows are returned), and a sparse list such as `[0.1, 0.03, 0.01]` gives the same values as the corresponding rows of the default profile. An empty `dl0` raises `ValueError`.
 
 ### Output DataFrame Columns
 
@@ -214,7 +214,7 @@ uv run pytest -v test/test_core.py::test_function_name
 
 4. **Surf beat**: `sbeat()` integrates over 8 surf-beat water level offsets. Despite the `GAUSS_HERMITE_*` names, the constants are a discretized standard normal distribution (weights 0.3413, 0.1359, … are band probabilities summing to 1), not Gauss–Hermite nodes/weights.
 
-5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking. This marching requires `dl0` ordered offshore → onshore, which `cal_surf_goda` guarantees by sorting.
+5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking. This marching requires `dl0` ordered offshore → onshore on a fine grid, which `cal_surf_goda` guarantees (see **Computation grid** above).
 
 ---
 
