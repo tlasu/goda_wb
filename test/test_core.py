@@ -186,21 +186,55 @@ def test_cal_surf_goda_dataframe_shapes_and_values() -> None:
     np.testing.assert_allclose(df["aks"].to_numpy(), expected_aks, rtol=1e-6, atol=1e-8)
 
 
-def test_cal_surf_goda_point_matches_bulk_version() -> None:
+@pytest.mark.parametrize("dl0", [0.2, 0.05, 0.01])
+def test_cal_surf_goda_point_matches_profile(dl0: float) -> None:
+    """単一点計算が、沖から計算した断面の同じ水深の結果と一致すること。"""
     tant = 0.015
     h0l0 = 0.035
-    dl0 = 0.21
 
-    df_bulk = core.cal_surf_goda(tant, h0l0, [dl0])
+    df_profile = core.cal_surf_goda(tant, h0l0)
     df_point = core.cal_surf_goda_point(tant, h0l0, dl0)
 
+    expected = df_profile[np.isclose(df_profile["dl0"], dl0)]
     pd.testing.assert_frame_equal(
-        df_bulk.reset_index(drop=True),
-        df_point.reset_index(drop=True),
+        expected.reset_index(drop=True),
+        df_point,
         check_dtype=False,
         atol=1e-8,
         rtol=1e-6,
     )
+
+
+def test_cal_surf_goda_point_includes_setup() -> None:
+    """砕波帯内の単一点計算でもセットアップが考慮されること。"""
+    df = core.cal_surf_goda_point(0.01, 0.02, 0.01)
+    assert df["etal0"].iloc[0] > 0
+
+
+def test_cal_surf_goda_order_independent() -> None:
+    """dl0 の並び順によらず同じ結果を、入力と同じ順序で返すこと。"""
+    tant = 0.01
+    h0l0 = 0.02
+    descending = [0.1, 0.05, 0.03, 0.02, 0.01]
+    shuffled = [0.03, 0.01, 0.1, 0.02, 0.05]
+
+    df_desc = core.cal_surf_goda(tant, h0l0, descending)
+    df_shuf = core.cal_surf_goda(tant, h0l0, shuffled)
+
+    np.testing.assert_allclose(df_shuf["dl0"].to_numpy(), shuffled)
+    pd.testing.assert_frame_equal(
+        df_shuf.set_index("dl0").sort_index(),
+        df_desc.set_index("dl0").sort_index(),
+    )
+    # 最も沖側の点が起点（セットアップ 0）、最も岸側の点でセットアップ最大
+    assert df_shuf.loc[df_shuf["dl0"].idxmax(), "etal0"] == 0.0
+    assert df_shuf["etal0"].idxmax() == df_shuf["dl0"].idxmin()
+
+
+def test_cal_surf_goda_rejects_duplicate_dl0() -> None:
+    """dl0 に重複がある場合に ValueError を返すこと。"""
+    with pytest.raises(ValueError):
+        core.cal_surf_goda(0.01, 0.02, [0.1, 0.05, 0.05])
 
 
 def test_cal_surf_goda_matches_expected_values() -> None:
@@ -308,6 +342,9 @@ def test_cal_surf_goda_dim_depth_list() -> None:
     df = core.cal_surf_goda_dim(tant=0.01, H0=5.0, T=10.0, d=depths, dim=True)
     assert len(df) == len(depths)
     np.testing.assert_allclose(df["d"].to_numpy(), depths, rtol=0.01)
+    # 浅い順に指定しても、最も深い点を起点に岸側でセットアップが生じる
+    assert df["etal0"].iloc[-1] == 0.0
+    assert df["etal0"].iloc[0] > 0
 
 
 def test_cal_surf_goda_dim_h13_dim_scaling() -> None:

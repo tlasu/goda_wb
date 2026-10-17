@@ -431,11 +431,14 @@ def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> p
     """合田の砕波変形モデル。
 
     指定された海底勾配と波形勾配に対して、各水深での代表波高比を計算する。
+    セットアップは沖側から岸側へ順に積み上げるため、内部では dl0 を降順に並べて
+    計算し、結果は入力と同じ順序で返す。
 
     Args:
         tant: 海底勾配 (tan θ)
         h0l0: 沖波波形勾配 (H0/L0)
         dl0: 水深波長比 (d/L0) のリスト。None の場合はデフォルト値を使用。
+            重複する値は指定できない。
 
     Returns:
         各水深における代表波高比等を含む DataFrame。
@@ -449,6 +452,11 @@ def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> p
 
     if dl0 is None:
         dl0 = goda_dl0_list
+    if len(set(dl0)) != len(dl0):
+        raise ValueError("dl0 に重複する値が含まれています")
+
+    order = sorted(range(len(dl0)), key=lambda k: dl0[k], reverse=True)
+    dl0 = [float(dl0[k]) for k in order]
 
     ipoint = len(dl0)
     etl0 = [0.0] * ipoint
@@ -494,11 +502,15 @@ def cal_surf_goda(tant: float, h0l0: float, dl0: list[float] | None = None) -> p
     df["dl0"] = dl0
     df["etal0"] = etl0
     df["aks"] = aks_
-    return df
+    df.index = order
+    return df.sort_index()
 
 
 def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
     """単一水深での合田の砕波変形モデル計算。
+
+    セットアップを考慮するため、デフォルトの水深波長比リストのうち dl0 より
+    沖側の点から dl0 まで計算し、dl0 の結果のみを返す。
 
     Args:
         tant: 海底勾配 (tan θ)
@@ -508,7 +520,9 @@ def cal_surf_goda_point(tant: float, h0l0: float, dl0: float) -> pd.DataFrame:
     Returns:
         代表波高比等を含む DataFrame（1行）
     """
-    return cal_surf_goda(tant, h0l0, [dl0])
+    profile = [v for v in goda_dl0_list if v > dl0] + [dl0]
+    df = cal_surf_goda(tant, h0l0, profile)
+    return df.iloc[[-1]].reset_index(drop=True)
 
 
 def cal_surf_goda_dim(
