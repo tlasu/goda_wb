@@ -22,10 +22,10 @@ goda_wb/
 ├── src/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
-│       ├── core.py           # All computation logic (588 lines, 15 functions)
-│       └── constant.py       # Physical constants & model parameters (148 lines)
+│       ├── core.py           # All computation logic (660 lines, 17 functions)
+│       └── constant.py       # Physical constants & model parameters (151 lines)
 ├── test/
-│   └── test_core.py          # Full test suite (505 lines, 92 test cases)
+│   └── test_core.py          # Full test suite (611 lines, 128 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
@@ -82,7 +82,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 92 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57. All tests must pass before committing.
+Tests live in `test/test_core.py`. There are 128 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4. All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -123,6 +123,8 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 | `cal_surf_goda` | `(tant, h0l0, dl0=None) → DataFrame` | Main dimensionless wave transformation calculation |
 | `cal_surf_goda_dim` | `(tant, H0, T, dim=False, d=None) → DataFrame` | Dimensional wrapper (SI units) |
 | `cal_surf_goda_point` | `(tant, h0l0, dl0) → DataFrame` | Single-point calculation (same as `cal_surf_goda(tant, h0l0, [dl0])`) |
+| `cal_surf_goda_approx` | `(tant, h0l0, dl0=None) → DataFrame` | Goda (1975) simplified formulas, eqs. (67)/(69); columns `H1_3`, `Hmax`, `dh0`, `dl0`, `aks` (no setup, no probability model) |
+| `approx_coef` | `(tant, h0l0) → dict` | Coefficients of eqs. (68)/(70): `beta0`, `beta1`, `betamax`, `beta0_max`, `beta1_max`, `betamax_max` |
 | `shoal` | `(dl0, h0l0) → float` | Shoaling coefficient (3-region model) |
 | `aksi` | `(dl0) → float` | Linear (small-amplitude) shoaling coefficient |
 | `cal_wave_length` | `(d, T) → float` | Wave length from depth and period |
@@ -181,6 +183,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 | `MAX_ITERATIONS` | 100 | Iteration cap for `wave()` / `shoal()`; exceeding it raises `RuntimeError` |
 | `REPRESENTATIVE_WAVE_PROBABILITIES` | 7 values | Exceedance probabilities for H1/1000 … H1/3 |
 | `DEEP_WATER_THRESHOLD` | 10.0 | dl0 threshold for deep water classification |
+| `APPROX_SHALLOW_DL0` | 0.2 | h/L0 below which the simplified formulas apply breaking (eqs. 67/69) |
 | `RAYLEIGH_TAIL_LIMIT` | 4.0 | Upper bound of the wave-height grid in `prob()`, as `a·x` (Rayleigh tail ≈ exp(−16)) |
 | `ETAI_MAX_RATIO` | 2.0 | Cap on the spacing ratio used by `etai()` extrapolation |
 | `goda_dl0_list` | 113 values | Default d/L₀ evaluation points (1e-9–1.0, descending) |
@@ -193,7 +196,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 - Tests are in `test/test_core.py`, using standard `pytest`
 - Use `pytest.mark.parametrize` for boundary/edge case sweeps
 - Use numerical regression tests (assert computed values ≈ expected reference values)
-- Validate against the original paper: `GODA1975_CHART_H13` / `GODA1975_CHART_HMAX` hold values read from Goda (1975) Figs. 50–57 (tolerance 0.04)
+- Validate against the original paper: `GODA1975_CHART_H13` / `GODA1975_CHART_HMAX` hold values read from Goda (1975) Figs. 50–57 (tolerance 0.04); `GODA1975_TABLE4` holds Table-4 coefficients for the simplified formulas (tolerance 0.01)
 - Test property invariants (e.g., `H1_3 <= H1_1000` always holds)
 - Test `ValueError` is raised for invalid inputs
 - No mocking — all tests exercise the real numeric implementation
@@ -221,6 +224,8 @@ uv run pytest -v test/test_core.py::test_function_name
 
 5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking; the spacing ratio is capped at `ETAI_MAX_RATIO` because user points close to default points would otherwise make the extrapolation blow up. This marching requires `dl0` ordered offshore → onshore on a fine grid, which `cal_surf_goda` guarantees (see **Computation grid** above).
 
+6. **Simplified formulas**: `cal_surf_goda_approx()` implements Goda (1975) p.99 eqs. (67)–(70) using `shoal()` for Ks. The paper prints β0* = 0.52 (H0'/L0)^-0.38…, but Table-4 confirms 0.052, which is what the code uses. Table-4 also lists βmax = 1.31 for slope 1/30, H0'/L0 = 0.01 where eq. (68) gives 1.318 (a rounding slip in the table).
+
 ---
 
 ## Sample Scripts
@@ -232,7 +237,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_core.py` | Basic API demonstration |
 | `check_goda.py` | Wave transformation plots across steepness values |
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
-| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` on Goda (1975) Figs. 50–57 using calibrated chart-frame corners; writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
+| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners; writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 

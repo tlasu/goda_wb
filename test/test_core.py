@@ -504,3 +504,108 @@ def test_sbeat_returns_valid_probability() -> None:
     for j in range(8):
         _, pxi = core.sbeat(0.02, 0.1, j)
         assert pxi > 0
+
+
+# ---------------------------------------------------------------------------
+# approx_coef() / cal_surf_goda_approx()
+# ---------------------------------------------------------------------------
+
+# 合田 (1975) 表-4 砕波帯内の波高の略算係数
+# (海底勾配, H0'/L0, β0, β1, βmax, β0*, β1*, βmax*)
+GODA1975_TABLE4 = [
+    (1 / 10, 0.005, 0.39, 0.79, 1.89, 0.73, 0.92, 3.13),
+    (1 / 10, 0.01, 0.30, 0.79, 1.55, 0.56, 0.92, 2.56),
+    (1 / 10, 0.02, 0.23, 0.79, 1.27, 0.43, 0.92, 2.10),
+    (1 / 10, 0.03, 0.20, 0.79, 1.12, 0.37, 0.92, 1.86),
+    (1 / 10, 0.04, 0.18, 0.79, 1.03, 0.33, 0.92, 1.71),
+    (1 / 10, 0.06, 0.15, 0.79, 0.92, 0.29, 0.92, 1.65),
+    (1 / 20, 0.005, 0.26, 0.64, 1.68, 0.49, 0.76, 2.78),
+    (1 / 20, 0.01, 0.20, 0.64, 1.37, 0.37, 0.76, 2.27),
+    (1 / 20, 0.02, 0.15, 0.64, 1.12, 0.29, 0.76, 1.86),
+    (1 / 20, 0.03, 0.13, 0.64, 1.00, 0.25, 0.76, 1.65),
+    (1 / 20, 0.04, 0.12, 0.64, 0.92, 0.22, 0.76, 1.65),
+    (1 / 20, 0.06, 0.10, 0.64, 0.92, 0.19, 0.76, 1.65),
+    (1 / 30, 0.005, 0.24, 0.60, 1.61, 0.44, 0.72, 2.67),
+    (1 / 30, 0.01, 0.18, 0.60, 1.31, 0.34, 0.72, 2.18),
+    (1 / 30, 0.02, 0.14, 0.60, 1.08, 0.26, 0.72, 1.79),
+    (1 / 30, 0.03, 0.12, 0.60, 0.96, 0.22, 0.72, 1.65),
+    (1 / 30, 0.04, 0.11, 0.60, 0.92, 0.20, 0.72, 1.65),
+    (1 / 30, 0.06, 0.09, 0.60, 0.92, 0.17, 0.72, 1.65),
+    (1 / 100, 0.005, 0.21, 0.54, 1.52, 0.40, 0.65, 2.52),
+    (1 / 100, 0.01, 0.16, 0.54, 1.25, 0.31, 0.65, 2.06),
+    (1 / 100, 0.02, 0.13, 0.54, 1.02, 0.23, 0.65, 1.69),
+    (1 / 100, 0.03, 0.11, 0.54, 0.92, 0.20, 0.65, 1.65),
+    (1 / 100, 0.04, 0.10, 0.54, 0.92, 0.18, 0.65, 1.65),
+    (1 / 100, 0.06, 0.08, 0.54, 0.92, 0.15, 0.65, 1.65),
+]
+
+
+@pytest.mark.parametrize(
+    "tant,h0l0,beta0,beta1,betamax,beta0_max,beta1_max,betamax_max", GODA1975_TABLE4
+)
+def test_approx_coef_matches_goda1975_table4(
+    tant: float,
+    h0l0: float,
+    beta0: float,
+    beta1: float,
+    betamax: float,
+    beta0_max: float,
+    beta1_max: float,
+    betamax_max: float,
+) -> None:
+    """略算係数が合田 (1975) 表-4 と一致すること。
+
+    表は小数 2 桁に丸められており、勾配 1/30・H0'/L0=0.01 の βmax は式 (68) では 1.318 だが
+    表では 1.31 となっているため、許容差を 0.01 とする。
+    """
+    coef = core.approx_coef(tant, h0l0)
+    expected = {
+        "beta0": beta0,
+        "beta1": beta1,
+        "betamax": betamax,
+        "beta0_max": beta0_max,
+        "beta1_max": beta1_max,
+        "betamax_max": betamax_max,
+    }
+    for key, value in expected.items():
+        assert coef[key] == pytest.approx(value, abs=0.01), key
+
+
+def test_cal_surf_goda_approx_deep_water() -> None:
+    """h/L0 >= 0.2 では H1/3 = Ks H0', Hmax = 1.8 Ks H0' となること。"""
+    df = core.cal_surf_goda_approx(1 / 30, 0.02, [0.5, 0.3, 0.2])
+    np.testing.assert_allclose(df["H1_3"], df["aks"])
+    np.testing.assert_allclose(df["Hmax"], 1.8 * df["aks"])
+
+
+def test_cal_surf_goda_approx_formula() -> None:
+    """h/L0 < 0.2 では式 (67)・(69) の最小値をとること。"""
+    tant, h0l0, dl0 = 1 / 30, 0.02, 0.02
+    coef = core.approx_coef(tant, h0l0)
+    aks = core.shoal(dl0, h0l0)
+    dh0 = dl0 / h0l0
+    df = core.cal_surf_goda_approx(tant, h0l0, [dl0])
+    assert df["H1_3"].iloc[0] == pytest.approx(
+        min(coef["beta0"] + coef["beta1"] * dh0, coef["betamax"], aks)
+    )
+    assert df["Hmax"].iloc[0] == pytest.approx(
+        min(coef["beta0_max"] + coef["beta1_max"] * dh0, coef["betamax_max"], 1.8 * aks)
+    )
+
+
+@pytest.mark.parametrize("tant", [1 / 10, 1 / 30, 1 / 100])
+@pytest.mark.parametrize("h0l0", [0.005, 0.02, 0.04])
+def test_cal_surf_goda_approx_close_to_full_model(tant: float, h0l0: float) -> None:
+    """略算式の H1/3 が厳密計算と概ね一致すること（論文では誤差 5% 程度）。"""
+    dl0 = [v * h0l0 for v in np.arange(4.0, 0.4, -0.25)]
+    full = core.cal_surf_goda(tant, h0l0, dl0)
+    approx = core.cal_surf_goda_approx(tant, h0l0, dl0)
+    np.testing.assert_allclose(approx["H1_3"], full["H1_3"], rtol=0.1)
+
+
+def test_cal_surf_goda_approx_rejects_invalid() -> None:
+    """不正な入力に対して ValueError を返すこと。"""
+    with pytest.raises(ValueError):
+        core.cal_surf_goda_approx(-0.01, 0.02)
+    with pytest.raises(ValueError):
+        core.cal_surf_goda_approx(0.01, 0)

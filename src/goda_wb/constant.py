@@ -12,6 +12,9 @@ MAX_ITERATIONS = 100
 
 DEEP_WATER_THRESHOLD = 10.0
 
+# 合田 (1975) の略算式で砕波の影響を考慮する水深波長比の上限 (h/L0 < 0.2)
+APPROX_SHALLOW_DL0 = 0.2
+
 # 波高確率密度の離散化範囲の上限 (a * H/H0)。exp(-16) ≈ 1e-7 で実質 0 とみなす
 RAYLEIGH_TAIL_LIMIT = 4.0
 

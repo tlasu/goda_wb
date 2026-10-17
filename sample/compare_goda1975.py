@@ -1,4 +1,4 @@
-"""合田 (1975) の算定図（原図）に本ライブラリの計算結果を重ねて比較する。
+"""合田 (1975) の算定図（原図）に本ライブラリの計算結果と略算式を重ねて比較する。
 
 原図: 合田良実 (1975) 浅海域における波浪の砕波変形, 港湾技術研究所報告 14(3)
   - p.96 図-50〜53 砕波帯内の有義波高の算定図 (H1/3)
@@ -35,6 +35,7 @@ CHARTS = {
         "image": "goda1975_p96_fig50-53.png",
         "ymax": 3.0,
         "ylabel": "$H_{1/3}/H_0'$",
+        "approx": "H1_3",
         "figs": ["図-50", "図-51", "図-52", "図-53"],
         "corners": [
             {"LB": (362.5, 1809.0), "RB": (1287.0, 1810.5), "LT": (364.0, 432.5), "RT": (1289.5, 430.5)},
@@ -49,6 +50,7 @@ CHARTS = {
         "image": "goda1975_p97_fig54-57.png",
         "ymax": 3.5,
         "ylabel": "$H_{max}/H_0'$ ($H_{1/250}$)",
+        "approx": "Hmax",
         "figs": ["図-54", "図-55", "図-56", "図-57"],
         "corners": [
             {"LB": (545.0, 1861.5), "RB": (1335.5, 1864.5), "LT": (552.5, 490.5), "RT": (1344.5, 495.5)},
@@ -74,12 +76,15 @@ def to_pixel(x, y, corners, ymax):
     return p[:, 0], p[:, 1]
 
 
-def compute(tant, column):
+def compute(tant, column, approx_column):
+    """厳密計算と略算式 (式 67・69) の曲線を返す。"""
     dh0 = np.arange(4.0, 0.0, -0.05)
     curves = {}
     for h0l0 in LIST_H0L0:
-        df = core.cal_surf_goda(tant, h0l0, list(dh0 * h0l0))
-        curves[h0l0] = (df["dh0"].to_numpy(), df[column].to_numpy())
+        dl0 = list(dh0 * h0l0)
+        df = core.cal_surf_goda(tant, h0l0, dl0)
+        da = core.cal_surf_goda_approx(tant, h0l0, dl0)
+        curves[h0l0] = (df["dh0"].to_numpy(), df[column].to_numpy(), da[approx_column].to_numpy())
     return curves
 
 
@@ -96,15 +101,25 @@ def draw(column):
         ax.imshow(img, cmap="gray", alpha=0.6)
         ax.set_xlim(min(xs) - pad, max(xs) + pad)
         ax.set_ylim(max(ys) + pad, min(ys) - pad)
-        for n, (h0l0, (x, y)) in enumerate(compute(SLOPES[k], column).items()):
+        curves = compute(SLOPES[k], column, chart["approx"])
+        for n, (h0l0, (x, y, ya)) in enumerate(curves.items()):
             inside = (x <= 4.0) & (y <= chart["ymax"])
             px, py = to_pixel(x[inside], y[inside], corners, chart["ymax"])
             ax.plot(px, py, "-", color=colors[n], linewidth=2.5, alpha=0.8,
                     label=f"$H_0'/L_0={h0l0}$")
+            inside = (x <= 4.0) & (ya <= chart["ymax"])
+            px, py = to_pixel(x[inside], ya[inside], corners, chart["ymax"])
+            ax.plot(px, py, "--", color=colors[n], linewidth=1.8, alpha=0.9)
         ax.set_title(f"{chart['figs'][k]} 海底勾配 {SLOPE_LABELS[k]}  {chart['ylabel']}")
         ax.set_axis_off()
-    axes.flat[0].legend(loc="upper left", bbox_to_anchor=(0.0, 0.88), fontsize=9)
-    fig.suptitle("合田 (1975) 原図（灰色）と goda_wb の計算結果（色線）")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    handles += [
+        plt.Line2D([], [], color="k", linestyle="-", linewidth=2.5),
+        plt.Line2D([], [], color="k", linestyle="--", linewidth=1.8),
+    ]
+    labels += ["厳密計算", "略算式 (式 67・69)"]
+    axes.flat[0].legend(handles, labels, loc="upper left", bbox_to_anchor=(0.0, 0.88), fontsize=9)
+    fig.suptitle("合田 (1975) 原図（灰色）と goda_wb の厳密計算（実線）・略算式（破線）")
     fig.tight_layout()
     return fig
 

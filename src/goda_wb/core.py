@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from goda_wb.constant import (
+    APPROX_SHALLOW_DL0,
     CONVERGENCE_TOL,
     DEEP_WATER_THRESHOLD,
     ETAI_MAX_RATIO,
@@ -586,3 +587,74 @@ def cal_surf_goda_dim(
             df[f"{col}_dim"] = df[col] * H0
 
     return df
+
+
+def approx_coef(tant: float, h0l0: float) -> dict[str, float]:
+    """合田 (1975) の略算式の係数。
+
+    式 (68) (有義波高) と式 (70) (最高波高) の係数を返す。原論文では β0* の係数が
+    0.52 と印刷されているが、表-4 と一致する 0.052 を用いる。
+
+    Args:
+        tant: 海底勾配 (tan θ)
+        h0l0: 沖波波形勾配 (H0'/L0)
+
+    Returns:
+        係数の辞書。キー: beta0, beta1, betamax (H1/3 用),
+        beta0_max, beta1_max, betamax_max (Hmax 用)
+    """
+    if tant < 0:
+        raise ValueError(f"海底勾配は非負でなければなりません: {tant}")
+    if h0l0 <= 0:
+        raise ValueError(f"波形勾配は正の値でなければなりません: {h0l0}")
+
+    s0 = float(h0l0 ** (-0.38) * np.exp(20.0 * tant**1.5))
+    smax = float(h0l0 ** (-0.29) * np.exp(2.4 * tant))
+    return {
+        "beta0": 0.028 * s0,
+        "beta1": 0.52 * float(np.exp(4.2 * tant)),
+        "betamax": max(0.92, 0.32 * smax),
+        "beta0_max": 0.052 * s0,
+        "beta1_max": 0.63 * float(np.exp(3.8 * tant)),
+        "betamax_max": max(1.65, 0.53 * smax),
+    }
+
+
+def cal_surf_goda_approx(tant: float, h0l0: float, dl0: list[float] | None = None) -> pd.DataFrame:
+    """合田 (1975) の略算式による砕波帯内の波高の計算。
+
+    有義波高は式 (67)、最高波高は式 (69) による:
+      - h/L0 >= 0.2: H1/3 = Ks H0', Hmax = 1.8 Ks H0'
+      - h/L0 < 0.2: H1/3 = min{β0 H0' + β1 h, βmax H0', Ks H0'},
+        Hmax = min{β0* H0' + β1* h, βmax* H0', 1.8 Ks H0'}
+
+    Args:
+        tant: 海底勾配 (tan θ)
+        h0l0: 沖波波形勾配 (H0'/L0)
+        dl0: 水深波長比 (d/L0) のリスト。None の場合はデフォルト値を使用。
+
+    Returns:
+        各水深における波高比を含む DataFrame。
+        カラム: H1_3, Hmax, dh0, dl0, aks
+    """
+    coef = approx_coef(tant, h0l0)
+    if dl0 is None:
+        dl0 = goda_dl0_list
+    dl0 = [float(v) for v in dl0]
+
+    h13, hmax, dh0, aks_ = [], [], [], []
+    for v in dl0:
+        aks = shoal(v, h0l0)
+        dh = v / h0l0
+        if v >= APPROX_SHALLOW_DL0:
+            h13.append(aks)
+            hmax.append(1.8 * aks)
+        else:
+            h13.append(min(coef["beta0"] + coef["beta1"] * dh, coef["betamax"], aks))
+            hmax.append(
+                min(coef["beta0_max"] + coef["beta1_max"] * dh, coef["betamax_max"], 1.8 * aks)
+            )
+        dh0.append(dh)
+        aks_.append(aks)
+
+    return pd.DataFrame({"H1_3": h13, "Hmax": hmax, "dh0": dh0, "dl0": dl0, "aks": aks_})
