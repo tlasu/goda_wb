@@ -140,7 +140,7 @@ cd sample && uv run python compare_goda1975.py
 
 ![最高波高の算定図との比較](sample/goda1975/compare_H1_250.png)
 
-各曲線のピーク付近の値は原図と 0.03 以内で一致し、テスト（`test_cal_surf_goda_matches_goda1975_chart_*`）でも確認しています。
+図-52（海底勾配 1/30）は図枠の下辺と縦軸の目盛が方眼より 0.03〜0.06 高く描かれているため、方眼を基準に重ねています。各曲線のピーク付近の値は原図と 0.03 以内で一致し、テスト（`test_cal_surf_goda_matches_goda1975_chart_*`）でも確認しています。
 
 ## 依存関係
 
