@@ -21,7 +21,7 @@ This file provides context for AI assistants (Claude Code and others) working on
 goda_wb/
 ├── src/
 │   └── goda_wb/
-│       ├── __init__.py       # Package init — re-exports `core`
+│       ├── __init__.py       # Package init — imports the `core` submodule only
 │       ├── core.py           # All computation logic (570 lines, 14 functions)
 │       └── constant.py       # Physical constants & model parameters (142 lines)
 ├── test/
@@ -112,7 +112,7 @@ GitHub Actions runs on every push/PR to `main`:
 
 ## Public API
 
-All functions are in `goda_wb.core` and re-exported from `goda_wb`.
+All functions are in `goda_wb.core`. They are **not** re-exported from the top-level package, so use `import goda_wb.core as core` (or `goda_wb.core.<func>`).
 
 ### Primary Functions
 
@@ -120,7 +120,9 @@ All functions are in `goda_wb.core` and re-exported from `goda_wb`.
 |----------|-----------|-------------|
 | `cal_surf_goda` | `(tant, h0l0, dl0=None) → DataFrame` | Main dimensionless wave transformation calculation |
 | `cal_surf_goda_dim` | `(tant, H0, T, dim=False, d=None) → DataFrame` | Dimensional wrapper (SI units) |
-| `cal_surf_goda_point` | `(tant, h0l0, dl0) → DataFrame` | Single-point calculation |
+| `cal_surf_goda_point` | `(tant, h0l0, dl0) → DataFrame` | Single-point result, computed by marching from offshore along `goda_dl0_list` so setup is included |
+
+`cal_surf_goda` accepts `dl0` in any order: it sorts internally from offshore (largest) to onshore (smallest), marches setup in that direction, and returns rows in the caller's order. Duplicate `dl0` values raise `ValueError`. Setup is accumulated only over the points given, so a sparse `dl0` list gives a coarser setup estimate.
 | `shoal` | `(dl0, h0l0) → float` | Shoaling coefficient (3-region model) |
 | `aksi` | `(dl0) → float` | Linear (small-amplitude) shoaling coefficient |
 | `cal_wave_length` | `(d, T) → float` | Wave length from depth and period |
@@ -133,7 +135,7 @@ All functions are in `goda_wb.core` and re-exported from `goda_wb`.
 | `H1_1000` through `H1_3` | Representative wave heights (exceedance: 1/1000, 1/250, …, 1/3) |
 | `dh0` | Depth-to-deep-water-height ratio |
 | `dl0` | Depth-to-deep-water-wavelength ratio |
-| `etal0` | Setup height ratio (η/L₀) |
+| `etal0` | Mean water level change ratio (η/L₀); 0 at the most offshore point, negative for set-down, positive for setup |
 | `aks` | Shoaling coefficient |
 | `d`, `H1_3_dim`, … | Dimensional values (only when `dim=True`) |
 
@@ -148,8 +150,8 @@ All functions are in `goda_wb.core` and re-exported from `goda_wb`.
   - `h0l0` = H₀/L₀ (deep water wave steepness)
   - `dl0` = d/L₀ (relative depth)
   - `dh0` = d/H₀ (depth to height ratio)
-- Internal/helper functions are not prefixed but are grouped at the bottom of `core.py`
-- Trailing underscores (`etl0_`, `h2l0_`) denote intermediate computed values
+- Internal/helper functions (`etai`, `sbeat`, `bindx`, `setup`, `out`, `prob`, `prob01`) are not prefixed and are interleaved with the public functions in `core.py`
+- Trailing underscores (`xp_`, `p_`, `aks_` in `cal_surf_goda`) denote per-point accumulator lists
 
 ### Module Organization
 
@@ -161,8 +163,8 @@ All functions are in `goda_wb.core` and re-exported from `goda_wb`.
 
 - Line length: 100 characters (enforced by ruff)
 - Type hints are used throughout — maintain them in any additions
-- Docstrings are in English
-- No external side effects — all functions are stateless and pure
+- Docstrings, comments and error messages are in Japanese (Google style `Args:` / `Returns:` sections)
+- No global state, but several helpers (`etai`, `setup`, `prob`, `prob01`) update the lists passed to them in place and also return them
 
 ### Constants (from `constant.py`)
 
@@ -174,9 +176,11 @@ All functions are in `goda_wb.core` and re-exported from `goda_wb`.
 | `NWAVE` | 7 | Number of representative wave heights |
 | `CONVERGENCE_TOL` | 1e-6 | Newton method convergence tolerance |
 | `WAVE_CONVERGENCE_TOL` | 0.0003 | Wave dispersion iteration tolerance |
+| `MAX_ITERATIONS` | 100 | Iteration cap for `wave()` / `shoal()`; exceeding it raises `RuntimeError` |
+| `REPRESENTATIVE_WAVE_PROBABILITIES` | 7 values | Exceedance probabilities for H1/1000 … H1/3 |
 | `DEEP_WATER_THRESHOLD` | 10.0 | dl0 threshold for deep water classification |
 | `goda_dl0_list` | 114 values | Default d/L₀ evaluation points (0.00001–1.0) |
-| `GAUSS_HERMITE_ABSCISSAE/WEIGHTS` | 8-point | Quadrature for surf beat integration |
+| `GAUSS_HERMITE_ABSCISSAE/WEIGHTS` | 8 points | Discretized normal distribution for surf beat (see note below) |
 
 ---
 
@@ -199,20 +203,18 @@ uv run pytest -v test/test_core.py::test_function_name
 
 ## Key Implementation Notes
 
-1. **Wave dispersion**: `wave(d)` solves x·tanh(x) = d iteratively (Newton's method), converging to `WAVE_CONVERGENCE_TOL`.
+1. **Wave dispersion**: `wave(d)` solves x·tanh(x) = d iteratively (Newton's method), converging to `WAVE_CONVERGENCE_TOL`. Returns `d` unchanged above `DEEP_WATER_THRESHOLD` and `0.0` for `d == 0`.
 
-2. **Shoaling model**: `shoal()` uses a 3-region model:
-   - Deep water: `aks = 1.0`
-   - Intermediate: computed from group velocity ratio
-   - Shallow water: matched to deep water limit
+2. **Shoaling model**: `shoal()` (Goda's nonlinear shoaling) splits into 3 regions using thresholds `d30l0` and `d50l0`, each found by Newton iteration:
+   - `dl0 >= d30l0`: linear (small-amplitude) theory, `aksi(dl0)`
+   - `d50l0 < dl0 < d30l0`: power law `aksi30 * (d30l0 / dl0) ** (2/7)`
+   - `dl0 <= d50l0`: shallow-water region, solved for Ks by Newton iteration
 
-3. **Probability distribution**: `prob()` uses a Rayleigh distribution with breaking correction to compute the full wave height probability density across `MP=51` points.
+3. **Probability distribution**: `prob()` uses a Rayleigh distribution with breaking correction to compute the full wave height probability density across `MP=51` points. The breaking limits come from `bindx()` (coefficients 0.18 / 0.12).
 
-4. **Gauss-Hermite quadrature**: Used in `sbeat()` for surf beat water level variation integration (8-point rule, pre-computed nodes/weights in `constant.py`).
+4. **Surf beat**: `sbeat()` integrates over 8 surf-beat water level offsets. Despite the `GAUSS_HERMITE_*` names, the constants are a discretized standard normal distribution (weights 0.3413, 0.1359, … are band probabilities summing to 1), not Gauss–Hermite nodes/weights.
 
-5. **Setup calculation**: `setup()` uses energy flux conservation with iterative Newton convergence (`CONVERGENCE_TOL = 1e-6`).
-
-6. **Stateless design**: All functions take parameters and return values — no global state is modified.
+5. **Setup calculation**: `setup()` updates the mean water level by a single explicit step from the radiation-stress (energy) balance between point `i-1` and `i` — no iteration. `etai()` linearly extrapolates the previous two points to give the initial estimate used for breaking. This marching requires `dl0` ordered offshore → onshore, which `cal_surf_goda` guarantees by sorting.
 
 ---
 
@@ -224,14 +226,16 @@ Located in `sample/` — not part of the installable package, intended for explo
 |--------|---------|
 | `check_core.py` | Basic API demonstration |
 | `check_goda.py` | Wave transformation plots across steepness values |
-| `check_shuto.py` | Storm surge scenario analysis |
-| `run.py` | Full analysis with matplotlib output |
+| `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
+| `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
-Run sample scripts with:
+Run sample scripts from the `sample/` directory (they import sibling modules and load images via relative paths such as `../syuto.png`):
 ```bash
-uv run python sample/check_goda.py
+cd sample && uv run python check_goda.py
 ```
+
+Samples are not covered by CI lint (`ruff` runs on `src/` and `test/` only).
 
 Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a dev dependency.
 
@@ -239,7 +243,7 @@ Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a de
 
 ## Git Branch Conventions
 
-- Main development branch: `master`
+- Main development branch: `main`
 - CI triggers on push/PR to `main`
 - Feature branches follow the pattern: `claude/<description>-<session-id>`
 
@@ -257,7 +261,7 @@ Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a de
 **Don't:**
 - Add new top-level modules without strong justification
 - Change the public API signature of `cal_surf_goda`, `cal_surf_goda_dim`, or `shoal` without updating tests
-- Use floating point literals for physical constants — refer to `constant.py`
+- Hardcode physical constants such as `g` or 2π — import them from `constant.py` (empirical model coefficients like 0.18 / 0.12 in `bindx()` or 1.416 in `prob()` currently live inline in `core.py`)
 - Add dependencies to `pyproject.toml` without updating `uv.lock` via `uv sync`
 - Skip linting — CI will fail on ruff errors
 
@@ -266,6 +270,6 @@ Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a de
 ## References
 
 - Goda, Y. (1975). Irregular wave deformation in the surf zone. *Coastal Engineering in Japan*, 18, 13–26.
-- Goda (1970): Original irregular wave model
+- 合田良実 (1975). 浅海域における波浪の砕波変形. 港湾技術研究所報告, 14(3). ([PDF](https://www.pari.go.jp/PDF/vol014-no03-03.pdf))
 - Project README (Japanese): `README.md`
 - Technical skill sheet: `skill.md`
