@@ -10,6 +10,9 @@ from goda_wb.constant import (
     ETAI_MAX_RATIO,
     GAUSS_HERMITE_ABSCISSAE,
     GAUSS_HERMITE_WEIGHTS,
+    INVERSE_H0L0_MAX,
+    INVERSE_H0L0_MIN,
+    INVERSE_TOL,
     MAX_ITERATIONS,
     MP,
     NWAVE,
@@ -658,3 +661,84 @@ def cal_surf_goda_approx(tant: float, h0l0: float, dl0: list[float] | None = Non
         aks_.append(aks)
 
     return pd.DataFrame({"H1_3": h13, "Hmax": hmax, "dh0": dh0, "dl0": dl0, "aks": aks_})
+
+
+def cal_h0_from_height(
+    tant: float,
+    H: float,
+    T: float,
+    d: float,
+    col: str = "H1_3",
+    approx: bool = False,
+) -> float:
+    """水深 d での波高 H から沖波波高 H0 を逆算する。
+
+    周期 T を固定すると d/L0 は一定で、波高 H は H0 について単調増加するため、
+    log(H0/L0) について Illinois 法（修正はさみうち法）で H(H0) = H を解く。
+    砕波帯内では H が H0 に対して頭打ちになるため、H のわずかな誤差で H0 が大きく変わる。
+
+    Args:
+        tant: 海底勾配 (tan θ)
+        H: 水深 d での波高 [m]
+        T: 周期 [s]
+        d: 水深 [m]
+        col: H が表す代表波高のカラム名。approx=False では H1_1000 ~ H1_3、
+            approx=True では H1_3 または Hmax。
+        approx: True の場合は略算式 (cal_surf_goda_approx) を用いる
+
+    Returns:
+        沖波波高 H0 [m]
+    """
+    if tant < 0:
+        raise ValueError(f"海底勾配は非負でなければなりません: {tant}")
+    if H <= 0:
+        raise ValueError(f"波高は正の値でなければなりません: {H}")
+    if T <= 0:
+        raise ValueError(f"周期は正の値でなければなりません: {T}")
+    if d <= 0:
+        raise ValueError(f"水深は正の値でなければなりません: {d}")
+    cols = (
+        ["H1_3", "Hmax"]
+        if approx
+        else ["H1_1000", "H1_250", "H1_100", "H1_50", "H1_10", "H1_5", "H1_3"]
+    )
+    if col not in cols:
+        raise ValueError(f"col は {cols} のいずれかでなければなりません: {col}")
+
+    L0 = g * T**2 / pi2
+    dl0 = d / L0
+    hl0 = H / L0
+    cal = cal_surf_goda_approx if approx else cal_surf_goda
+
+    def residual(x: float) -> float:
+        h0l0 = float(np.exp(x))
+        return float(cal(tant, h0l0, [dl0])[col].iloc[0]) * h0l0 - hl0
+
+    a, b = float(np.log(INVERSE_H0L0_MIN)), float(np.log(INVERSE_H0L0_MAX))
+    fa, fb = residual(a), residual(b)
+    if fa > 0 or fb < 0:
+        hmin, hmax = (fa + hl0) * L0, (fb + hl0) * L0
+        raise ValueError(
+            f"波高 {H} m は探索範囲 (H0/L0 = {INVERSE_H0L0_MIN}~{INVERSE_H0L0_MAX}) で"
+            f"得られる範囲 {hmin:.4g}~{hmax:.4g} m の外です"
+        )
+
+    side = 0
+    for _ in range(MAX_ITERATIONS):
+        c = (a * fb - b * fa) / (fb - fa)
+        fc = residual(c)
+        if fc == 0:
+            return float(np.exp(c)) * L0
+        if (fc > 0) == (fb > 0):
+            b, fb = c, fc
+            if side == -1:
+                fa *= 0.5
+            side = -1
+        else:
+            a, fa = c, fc
+            if side == 1:
+                fb *= 0.5
+            side = 1
+        if b - a < INVERSE_TOL:
+            return float(np.exp(c)) * L0
+    raise RuntimeError(f"沖波波高の逆算が {MAX_ITERATIONS} 回の反復で収束しませんでした")

@@ -609,3 +609,54 @@ def test_cal_surf_goda_approx_rejects_invalid() -> None:
         core.cal_surf_goda_approx(-0.01, 0.02)
     with pytest.raises(ValueError):
         core.cal_surf_goda_approx(0.01, 0)
+
+
+# ---------------------------------------------------------------------------
+# cal_h0_from_height()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("tant", "H0", "T", "d", "col"),
+    [
+        (1 / 50, 1.7, 10.0, 5.0, "H1_3"),  # 砕波直前
+        (1 / 50, 8.0, 10.0, 5.0, "H1_3"),  # 砕波帯内
+        (1 / 10, 1.0, 6.0, 2.0, "H1_1000"),
+        (1 / 100, 3.0, 12.0, 50.0, "H1_3"),  # 浅水変形のみ
+    ],
+)
+def test_cal_h0_from_height_roundtrip(tant: float, H0: float, T: float, d: float, col: str) -> None:
+    """順計算した波高から元の沖波波高が復元されること。"""
+    df = core.cal_surf_goda_dim(tant, H0, T, dim=True, d=d)
+    H = float(df[f"{col}_dim"].iloc[0])
+    assert core.cal_h0_from_height(tant, H, T, d, col=col) == pytest.approx(H0, rel=1e-5)
+
+
+@pytest.mark.parametrize(("tant", "col"), [(1 / 50, "H1_3"), (0.0, "Hmax"), (1 / 10, "H1_3")])
+def test_cal_h0_from_height_roundtrip_approx(tant: float, col: str) -> None:
+    """略算式でも順計算した波高から沖波波高が復元されること。"""
+    H0, T, d = 3.0, 10.0, 5.0
+    L0 = g * T**2 / pi2
+    H = float(core.cal_surf_goda_approx(tant, H0 / L0, [d / L0])[col].iloc[0]) * H0
+    assert core.cal_h0_from_height(tant, H, T, d, col=col, approx=True) == pytest.approx(
+        H0, rel=1e-5
+    )
+
+
+def test_cal_h0_from_height_out_of_range() -> None:
+    """砕波で到達できない波高は ValueError になること。"""
+    with pytest.raises(ValueError):
+        core.cal_h0_from_height(1 / 50, 10.0, 10.0, 5.0, approx=True)
+
+
+def test_cal_h0_from_height_rejects_invalid() -> None:
+    """不正な入力に対して ValueError を返すこと。"""
+    with pytest.raises(ValueError):
+        core.cal_h0_from_height(-0.01, 2.0, 10.0, 5.0)
+    for H, T, d in [(0.0, 10.0, 5.0), (2.0, 0.0, 5.0), (2.0, 10.0, 0.0)]:
+        with pytest.raises(ValueError):
+            core.cal_h0_from_height(0.02, H, T, d)
+    with pytest.raises(ValueError):
+        core.cal_h0_from_height(0.02, 2.0, 10.0, 5.0, col="Hmax")
+    with pytest.raises(ValueError):
+        core.cal_h0_from_height(0.02, 2.0, 10.0, 5.0, col="H1_10", approx=True)
