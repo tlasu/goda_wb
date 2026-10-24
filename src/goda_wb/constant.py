@@ -21,6 +21,11 @@ RAYLEIGH_TAIL_LIMIT = 4.0
 # etai() の線形外挿で用いる点間隔比の上限（デフォルトの水深波長比リストの最大値と同じ）
 ETAI_MAX_RATIO = 2.0
 
+# cal_h0_from_height() で沖波を探索する波形勾配 (H0/L0) の範囲と、H0 の相対収束判定値
+INVERSE_H0L0_MIN = 1.0e-4
+INVERSE_H0L0_MAX = 0.1
+INVERSE_TOL = 1.0e-6
+
 GAUSS_HERMITE_ABSCISSAE = [3.2831, 2.3158, 1.3832, 0.4599, -0.4599, -1.3832, -2.3158, -3.2831]
 GAUSS_HERMITE_WEIGHTS = [0.0014, 0.0214, 0.1359, 0.3413, 0.3413, 0.1359, 0.0214, 0.0014]
 
