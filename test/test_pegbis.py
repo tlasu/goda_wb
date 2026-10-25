@@ -11,6 +11,7 @@ sys.path.append(str(ROOT_DIR / "src"))
 
 import goda_wb.core as core
 import goda_wb.pegbis as pegbis
+from goda_wb.constant import PEGBIS_TP_T13
 
 # ---------------------------------------------------------------------------
 # wave_levels() / spectral_periods()
@@ -25,6 +26,23 @@ def test_wave_levels_reproduce_rayleigh_statistics() -> None:
     assert np.all(np.diff(levels) < 0)
     assert rep["H1_3"] == pytest.approx(1.0, abs=0.01)
     assert rep["H1_250"] / rep["H1_3"] == pytest.approx(1.80, abs=0.02)
+
+
+def test_wave_levels_h1_floor_for_small_m() -> None:
+    """M を減らしても最大レベルは 1.80 H0' を下回らないこと（論文 6 章）。"""
+    assert pegbis.wave_levels(1.0, 61)[0] == pytest.approx(1.80)
+    assert pegbis.wave_levels(1.0)[0] == pytest.approx(0.706 * np.sqrt(np.log(1662.0)))
+
+
+@pytest.mark.parametrize(("M", "expected"), [(831, 0.080), (300, 0.080), (101, 0.077), (31, 0.074)])
+def test_default_cb(M: int, expected: float) -> None:
+    """波高レベル数に応じた Cb（論文 2 章 (5)）。"""
+    assert pegbis.default_cb(M) == pytest.approx(expected)
+
+
+def test_peak_period_ratio_matches_paper() -> None:
+    """Tp/T1/3 が論文付録の Tp = 9.10 s, T1/3 = 8.01 s と一致すること。"""
+    assert pytest.approx(9.10 / 8.01, rel=0.002) == PEGBIS_TP_T13
 
 
 def test_spectral_periods() -> None:
@@ -75,6 +93,26 @@ def test_breaker_index_matches_paper_figures(
     """式 (7)/(11) の κm が論文の図-2, 3 と一致すること。"""
     kappa = pegbis.gradational_breaker_index(h, L0, slope, hm, H1_LEVEL)
     assert kappa == pytest.approx(expected, abs=0.02)
+
+
+# 図-1 (I = 0) の最大波高レベルの Hb/h = 2κ1 を h/L0 = 0.01 で読み取った値。
+# 図中の H0/L0 は H1/L0 として描かれている
+@pytest.mark.parametrize(("h1l0", "expected"), [(0.01, 0.92), (0.02, 1.02), (0.04, 1.18)])
+def test_breaker_index_matches_fig1(h1l0: float, expected: float) -> None:
+    """最大レベルの砕波限界波高比が論文の図-1 と一致すること。"""
+    kappa = pegbis.gradational_breaker_index(0.01, 1.0, 0.0, h1l0, h1l0, cb2=0.080)
+    assert 2.0 * kappa == pytest.approx(expected, abs=0.03)
+
+
+def test_breaker_index_custom_cb() -> None:
+    """Cb, Cb' を指定すると勾配の正負に応じて使い分けること。"""
+    base = pegbis.gradational_breaker_index(1.0, 50.0, 0.02, 1.0, 1.0)
+    low = pegbis.gradational_breaker_index(1.0, 50.0, 0.02, 1.0, 1.0, cb=0.070)
+    flat = pegbis.gradational_breaker_index(1.0, 50.0, 0.0, 1.0, 1.0, cb=0.070)
+    flat2 = pegbis.gradational_breaker_index(1.0, 50.0, 0.0, 1.0, 1.0, cb2=0.0613)
+    assert low < base
+    assert flat == pytest.approx(pegbis.gradational_breaker_index(1.0, 50.0, 0.0, 1.0, 1.0))
+    assert flat2 < flat
 
 
 def test_breaker_index_capped_beyond_dl0_02() -> None:
@@ -210,7 +248,8 @@ def test_horizontal_step_matches_paper_calculation() -> None:
     """水平ステップ上の安定波高が論文 図-11 の計算値と概ね一致すること。
 
     図-11 の計算値（水平床上）は Hmax ≈ 0.101, H1/10 ≈ 0.078, H1/3 ≈ 0.065 m。
-    本実装は 7~8 % 小さい（Hrms, Hmean は 15~19 % 小さい）。
+    本実装は 5~6 % 小さい（Hrms, Hmean は 12~14 % 小さい）。沖側 (h = 0.36 m) の H1/3 は
+    論文の 0.088 m に対し、浅水係数 Ks ≈ 1.03 の分だけ大きい。
     """
     df = pegbis.cal_surf_pegbis(KWEON_X, KWEON_H, 0.0879, 2.21, n_freq=10)
     flat = df[df["x"] >= 3.0]
@@ -219,7 +258,7 @@ def test_horizontal_step_matches_paper_calculation() -> None:
     assert last["H1_250"] == pytest.approx(0.101, rel=0.12)
     assert last["H1_10"] == pytest.approx(0.078, rel=0.12)
     assert last["H1_3"] == pytest.approx(0.065, rel=0.12)
-    assert df.loc[0, "H1_3"] == pytest.approx(0.088, rel=0.03)
+    assert df.loc[0, "H1_3"] == pytest.approx(0.088, rel=0.05)
 
 
 def test_friction_reduces_wave_height() -> None:
@@ -239,6 +278,16 @@ def test_result_independent_of_input_spacing() -> None:
     assert a.iloc[-1]["H1_3"] == pytest.approx(b.iloc[-1]["H1_3"], rel=0.01)
 
 
+def test_lower_cb_increases_decay() -> None:
+    """Cb を下げる（現地海岸向け 0.070）と砕波帯内の波高が小さくなること。"""
+    x = [0.0, 300.0, 500.0]
+    h = [10.0, 2.0, 2.0]
+    lab = pegbis.cal_surf_pegbis(x, h, 3.0, 8.0)
+    field = pegbis.cal_surf_pegbis(x, h, 3.0, 8.0, cb=0.070)
+    assert field.iloc[-1]["H1_3"] < lab.iloc[-1]["H1_3"]
+    assert field.iloc[0]["H1_3"] == pytest.approx(lab.iloc[0]["H1_3"])
+
+
 @pytest.mark.parametrize(
     ("x", "h", "kwargs"),
     [
@@ -247,6 +296,7 @@ def test_result_independent_of_input_spacing() -> None:
         ([0.0, 0.0], [1.0, 1.0], {}),
         ([0.0, 1.0], [1.0, 0.0], {}),
         ([0.0, 1.0], [1.0, 1.0], {"fw": -0.1}),
+        ([0.0, 1.0], [1.0, 1.0], {"cb": 0.0}),
     ],
 )
 def test_profile_rejects_invalid(x, h, kwargs) -> None:

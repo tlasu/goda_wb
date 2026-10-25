@@ -25,7 +25,9 @@ from goda_wb.constant import (
     PEGBIS_BREAKING_DL0,
     PEGBIS_CB,
     PEGBIS_CB2,
+    PEGBIS_CB_BY_LEVELS,
     PEGBIS_FW,
+    PEGBIS_H1_MIN_RATIO,
     PEGBIS_LEVELS,
     PEGBIS_MAX_DH_RATIO,
     PEGBIS_MAX_DX_H_RATIO,
@@ -57,6 +59,9 @@ _DEEP_KH = 20.0
 def wave_levels(H0: float, M: int = PEGBIS_LEVELS) -> np.ndarray:
     """レイリー分布を等確率に M 分割した沖波の波高レベル（式 (5)）。
 
+    論文のプログラムと同じく、M を減らしても最大の波高レベル H1 は 1.80 H0' を下回らない
+    ようにする（6 章: 砕波帯外の沖側で Hmax = 1.80 H1/3 として計算を開始する）。
+
     Args:
         H0: 沖波の有義波高 H0' [m]
         M: 波高レベルの数
@@ -69,14 +74,32 @@ def wave_levels(H0: float, M: int = PEGBIS_LEVELS) -> np.ndarray:
     if M < 1:
         raise ValueError(f"波高レベル数は 1 以上でなければなりません: {M}")
     m = np.arange(1, M + 1)
-    return 0.706 * H0 * np.sqrt(np.log(2.0 * M / (2.0 * m - 1.0)))
+    levels = 0.706 * H0 * np.sqrt(np.log(2.0 * M / (2.0 * m - 1.0)))
+    levels[0] = max(levels[0], PEGBIS_H1_MIN_RATIO * H0)
+    return levels
+
+
+def default_cb(M: int) -> float:
+    """波高レベル数 M に応じた段階的砕波係数の定数 Cb（2 章 (5)）。
+
+    M >= 300 では 0.080、M = 101, 61, 31 では 0.077, 0.076, 0.074 とし、間は線形補間する。
+
+    Args:
+        M: 波高レベルの数
+
+    Returns:
+        定数 Cb
+    """
+    ms, cbs = zip(*PEGBIS_CB_BY_LEVELS, strict=True)
+    return float(np.interp(M, ms, cbs))
 
 
 def spectral_periods(T: float, n_freq: int) -> np.ndarray:
     """エネルギーが等しくなるように分割した周波数成分の周期（式 (15)、γ = 1）。
 
     Args:
-        T: 有義波周期 T1/3 [s]。ピーク周期は Tp = 1.05 T1/3 とする
+        T: 有義波周期 T1/3 [s]。ピーク周期は修正 Bretschneider-光易型スペクトルの
+            関係 Tp = 1.136 T1/3 とする
         n_freq: 周波数成分の数 N。1 の場合は T のみを返す
 
     Returns:
@@ -100,6 +123,8 @@ def gradational_breaker_index(
     slope: float,
     Hm: float | np.ndarray,
     H1: float,
+    cb: float = PEGBIS_CB,
+    cb2: float = PEGBIS_CB2,
 ) -> float | np.ndarray:
     """段階的砕波係数 κm（式 (7)、I <= 0 では式 (11) の κm'）。
 
@@ -113,14 +138,16 @@ def gradational_breaker_index(
         slope: 海底勾配 I（岸向きに浅くなる向きを正）
         Hm: 沖波の波高レベル [m]
         H1: 沖波の最大の波高レベル [m]
+        cb: I > 0 で用いる定数 Cb
+        cb2: I <= 0 で用いる定数 Cb'
 
     Returns:
         段階的砕波係数 κm
     """
     if slope > 0:
-        cb, beta0, p, i = PEGBIS_CB, PEGBIS_BETA0, PEGBIS_P, slope
+        beta0, p, i = PEGBIS_BETA0, PEGBIS_P, slope
     else:
-        cb, beta0, p, i = PEGBIS_CB2, PEGBIS_BETA02, PEGBIS_P2, 0.0
+        cb, beta0, p, i = cb2, PEGBIS_BETA02, PEGBIS_P2, 0.0
     hh = np.minimum(h, PEGBIS_BREAKING_DL0 * L0)
     first = cb * L0 / hh * (1.0 - np.exp(-1.5 * np.pi * hh / L0 * (1.0 + 15.0 * i**2.5)))
     second = beta0 * Hm / hh * (Hm / L0) ** (-0.38) * np.exp(30.0 * i**2)
@@ -250,6 +277,8 @@ def cal_surf_pegbis(
     fw: float | Sequence[float] = PEGBIS_FW,
     M: int = PEGBIS_LEVELS,
     n_freq: int = 1,
+    cb: float | None = None,
+    cb2: float | None = None,
 ) -> pd.DataFrame:
     """任意の断面地形における不規則波の砕波変形（PEGBIS の岸沖方向 1 次元版）。
 
@@ -266,6 +295,9 @@ def cal_surf_pegbis(
         fw: 底面の摩擦係数。スカラーまたは x と同じ長さの配列（点間は線形補間）
         M: 波高レベルの数
         n_freq: 周波数成分の数。1 の場合は周期 T の単一成分、2 以上では式 (15) で分割
+        cb: 段階的砕波係数の定数 Cb。None の場合は M に応じた値 (default_cb)。
+            論文は現地海岸への適用には Cb = 0.070 を推奨している（9 章 (5)）
+        cb2: 海底勾配 0 以下で用いる Cb'。None の場合は 0.080 × Cb / 0.080 の比例配分
 
     Returns:
         各入力点の結果を含む DataFrame。
@@ -286,6 +318,12 @@ def cal_surf_pegbis(
     if np.any(fw_arr < 0):
         raise ValueError("摩擦係数は非負でなければなりません")
 
+    if cb is None:
+        cb = default_cb(M)
+    if cb2 is None:
+        cb2 = PEGBIS_CB2 * cb / PEGBIS_CB
+    if cb <= 0 or cb2 <= 0:
+        raise ValueError(f"Cb, Cb' は正の値でなければなりません: cb={cb}, cb2={cb2}")
     levels = wave_levels(H0, M)
     periods = spectral_periods(T, n_freq)
     L0n = g * periods**2 / pi2
@@ -301,7 +339,7 @@ def cal_surf_pegbis(
     a = 0.5 * levels[:, None] * np.sqrt(0.5 / cg_prev)[None, :]
 
     def decay(amp: np.ndarray, j: int, kh: np.ndarray) -> np.ndarray:
-        kappa = gradational_breaker_index(hf[j], L0, slope[j], levels[:, None], levels[0])
+        kappa = gradational_breaker_index(hf[j], L0, slope[j], levels[:, None], levels[0], cb, cb2)
         fd = breaking_decay_coef(amp, hf[j], kappa, slope[j])
         if fwf[j] > 0:
             fd = fd + bottom_friction_coef(amp, hf[j], kh[None, :], fwf[j])
@@ -345,6 +383,8 @@ def cal_surf_pegbis_slope(
     fw: float = PEGBIS_FW,
     M: int = PEGBIS_LEVELS,
     n_freq: int = 1,
+    cb: float | None = None,
+    cb2: float | None = None,
 ) -> pd.DataFrame:
     """一様勾配斜面における PEGBIS の無次元計算（合田 (1975) のモデルとの比較用）。
 
@@ -358,6 +398,8 @@ def cal_surf_pegbis_slope(
         fw: 底面の摩擦係数
         M: 波高レベルの数
         n_freq: 周波数成分の数
+        cb: 段階的砕波係数の定数 Cb（cal_surf_pegbis と同じ）
+        cb2: 海底勾配 0 以下で用いる Cb'（cal_surf_pegbis と同じ）
 
     Returns:
         各水深における波高比 (H/H0') を含む DataFrame。
@@ -379,7 +421,7 @@ def cal_surf_pegbis_slope(
     grid = sorted(set(targets) | {start}, reverse=True)
     x = [(start - v) / tant for v in grid]
     T = float(np.sqrt(pi2 / g))  # L0 = 1
-    df = cal_surf_pegbis(x, grid, h0l0, T, fw=fw, M=M, n_freq=n_freq)
+    df = cal_surf_pegbis(x, grid, h0l0, T, fw=fw, M=M, n_freq=n_freq, cb=cb, cb2=cb2)
 
     cols = list(_REPRESENTATIVE) + ["Hrms", "Hmean"]
     res = df[cols] / h0l0

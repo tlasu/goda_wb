@@ -23,11 +23,11 @@ goda_wb/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
 │       ├── core.py           # Goda (1975) model — all its computation logic (744 lines, 18 functions)
-│       ├── pegbis.py         # Goda (2004) gradational breaking model PEGBIS, 1-D cross-shore (390 lines)
-│       └── constant.py       # Physical constants & model parameters (181 lines)
+│       ├── pegbis.py         # Goda (2004) gradational breaking model PEGBIS, 1-D cross-shore (432 lines)
+│       └── constant.py       # Physical constants & model parameters (187 lines)
 ├── test/
 │   ├── test_core.py          # Test suite for core (662 lines, 137 test cases)
-│   └── test_pegbis.py        # Test suite for pegbis (255 lines, 40 test cases)
+│   └── test_pegbis.py        # Test suite for pegbis (305 lines, 52 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
@@ -86,7 +86,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py` (137 cases, covering all public API functions of `core`, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4) and `test/test_pegbis.py` (40 cases for `pegbis`). All tests must pass before committing.
+Tests live in `test/test_core.py` (137 cases, covering all public API functions of `core`, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4) and `test/test_pegbis.py` (52 cases for `pegbis`). All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -154,13 +154,14 @@ A separate model: Goda (2004) ECOH/YG No.2 Ver.5, restricted to 1-D cross-shore,
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `cal_surf_pegbis` | `(x, h, H0, T, fw=0.01, M=831, n_freq=1) → DataFrame` | Arbitrary profile; `x` [m] increasing shoreward, `h` [m] > 0. Columns `x`, `h`, `slope`, `Ks`, `H1_250` … `H1_3`, `Hrms`, `Hmean` [m]. `fw` scalar or per-point array |
-| `cal_surf_pegbis_slope` | `(tant, h0l0, dl0=None, fw=0.01, M=831, n_freq=1) → DataFrame` | Uniform slope, dimensionless (L0 = 1, start at h/L0 = max(0.5, max(dl0))); columns as `cal_surf_goda` (ratios to H0') plus `Hrms`, `Hmean`; no `etal0` |
-| `gradational_breaker_index` | `(h, L0, slope, Hm, H1)` | κm, eq. (7)/(8); for slope <= 0 eq. (11) constants with I = 0; h/L0 capped at 0.2 |
+| `cal_surf_pegbis` | `(x, h, H0, T, fw=0.01, M=831, n_freq=1, cb=None, cb2=None) → DataFrame` | Arbitrary profile; `x` [m] increasing shoreward, `h` [m] > 0. Columns `x`, `h`, `slope`, `Ks`, `H1_250` … `H1_3`, `Hrms`, `Hmean` [m]. `fw` scalar or per-point array. `cb=None` → `default_cb(M)`; `cb2=None` → `0.080 · cb / 0.080` (proportional, as the paper does for its field cases; it recommends `cb=0.070` for field sites) |
+| `cal_surf_pegbis_slope` | `(tant, h0l0, dl0=None, fw=0.01, M=831, n_freq=1, cb=None, cb2=None) → DataFrame` | Uniform slope, dimensionless (L0 = 1, start at h/L0 = max(0.5, max(dl0))); columns as `cal_surf_goda` (ratios to H0') plus `Hrms`, `Hmean`; no `etal0` |
+| `gradational_breaker_index` | `(h, L0, slope, Hm, H1, cb=0.080, cb2=0.080)` | κm, eq. (7)/(8); for slope <= 0 eq. (11) constants with I = 0; h/L0 capped at 0.2 |
 | `breaking_decay_coef` | `(a, h, kappa, slope)` | f_Db, eq. (4) with α_b = 3/8 (0.3 + 2.5 max(I, 0)) (appendix eq. 付1) |
 | `bottom_friction_coef` | `(a, h, kh, fw)` | f_Df, eq. (14) |
 | `swart_fw` | `(ks, am) → float` | Swart (1974) friction factor, capped at 0.30 |
-| `wave_levels` / `spectral_periods` | `(H0, M)` / `(T, n_freq)` | Equal-probability Rayleigh levels, eq. (5); equal-energy frequency split, eq. (15) with Tp = 1.05 T1/3 |
+| `wave_levels` / `spectral_periods` | `(H0, M)` / `(T, n_freq)` | Equal-probability Rayleigh levels, eq. (5), with H1 raised to at least 1.80 H0' for small M (paper §6); equal-energy frequency split, eq. (15) with Tp = 0.6^(-1/4) T1/3 = 1.136 T1/3 (modified Bretschneider–Mitsuyasu; paper appendix: Tp = 9.10 s ↔ T1/3 = 8.01 s) |
+| `default_cb` | `(M) → float` | Cb by number of levels: 0.080 (M ≥ 300), 0.077 (101), 0.076 (61), 0.074 (31), linear in between |
 
 ---
 
@@ -207,7 +208,7 @@ A separate model: Goda (2004) ECOH/YG No.2 Ver.5, restricted to 1-D cross-shore,
 | `ETAI_MAX_RATIO` | 2.0 | Cap on the spacing ratio used by `etai()` extrapolation |
 | `INVERSE_H0L0_MIN` / `INVERSE_H0L0_MAX` | 1e-4 / 0.1 | H0/L0 search bracket of `cal_h0_from_height()`; targets outside it raise `ValueError` |
 | `INVERSE_TOL` | 1e-6 | Convergence tolerance on log(H0/L0) in `cal_h0_from_height()` |
-| `PEGBIS_*` | — | PEGBIS constants: `CB`/`BETA0`/`P` = 0.080/0.016/0.333 (eq. 8), `CB2`/`BETA02`/`P2` = 0.080/0.016/0.667 (eq. 11; paper gives Cb' = 0.070–0.080), `LEVELS` = 831, `FW` = 0.01, `BREAKING_DL0` = 0.2, `SLOPE_DISTANCE_L0` = 0.1, `TP_T13` = 1.05, internal grid limits `MAX_DH_RATIO`/`MAX_DX_H_RATIO`/`MAX_DX_L_RATIO` |
+| `PEGBIS_*` | — | PEGBIS constants: `CB`/`BETA0`/`P` = 0.080/0.016/0.333 (eq. 8), `CB2`/`BETA02`/`P2` = 0.080/0.016/0.667 (eq. 11; paper gives Cb' = 0.070–0.080), `LEVELS` = 831, `FW` = 0.01, `BREAKING_DL0` = 0.2, `SLOPE_DISTANCE_L0` = 0.1, `CB_BY_LEVELS` (table for `default_cb`), `H1_MIN_RATIO` = 1.80, `TP_T13` = 1.136, internal grid limits `MAX_DH_RATIO`/`MAX_DX_H_RATIO`/`MAX_DX_L_RATIO` |
 | `goda_dl0_list` | 113 values | Default d/L₀ evaluation points (1e-9–1.0, descending) |
 | `GAUSS_HERMITE_ABSCISSAE/WEIGHTS` | 8 points | Discretized normal distribution for surf beat (see note below) |
 
@@ -250,7 +251,7 @@ uv run pytest -v test/test_core.py::test_function_name
 
 7. **Inverse calculation**: `cal_h0_from_height()` fixes T (so d/L0 is fixed) and solves `H(H0) = H` on log(H0/L0) with the Illinois (modified regula falsi) method, using `cal_surf_goda` or `cal_surf_goda_approx` as the forward model; the wave height is monotonically increasing in H0. One forward evaluation of the full model takes ~0.1 s, so one inversion takes about 1 s. Inside the surf zone H saturates with H0, so the inverse is ill-conditioned there.
 
-8. **PEGBIS**: with normal incidence the parabolic equation reduces, per level m and frequency component n, to `da/dx = -(1/2) a d(ln cg)/dx - f_D a`. `cal_surf_pegbis` marches it with Heun's method on an internal grid (input points plus subdivisions limited by `PEGBIS_MAX_*`) from the offshore boundary, where heights are linearly shoaled from deep water (the boundary must be outside the surf zone). κm always uses the L0 of T1/3, also for spectral components. Level heights combine components as rms and are sorted before computing H1/n (fractional level weighting); Hmax is represented by `H1_250` as in the paper. No setup, surf beat, nonlinear shoaling, refraction or diffraction. Known differences from the paper: on slope 1/10, Hmax up to ~0.1 H0' lower than the paper's PEGBIS points; on Kweon's step (Fig. 11), stable Hmax/H1/10/H1/3 are 7–8 % lower and Hrms/Hmean 15–19 % lower than the paper's computed values. Shoaling minimum 0.937 with `n_freq=10` matches the paper.
+8. **PEGBIS**: with normal incidence the parabolic equation reduces, per level m and frequency component n, to `da/dx = -(1/2) a d(ln cg)/dx - f_D a`. `cal_surf_pegbis` marches it with Heun's method on an internal grid (input points plus subdivisions limited by `PEGBIS_MAX_*`) from the offshore boundary, where heights are linearly shoaled from deep water (the boundary must be outside the surf zone). κm always uses the L0 of T1/3, also for spectral components. Level heights combine components as rms and are sorted before computing H1/n (fractional level weighting); Hmax is represented by `H1_250` as in the paper. No setup, surf beat, nonlinear shoaling, refraction or diffraction. Known differences from the paper: on slope 1/10, Hmax up to ~0.07 H0' lower than the paper's PEGBIS points (付図-4); on Kweon's step (Fig. 11), stable Hmax/H1/10/H1/3 are 5–6 % lower and Hrms/Hmean 12–14 % lower than the paper's computed values, and the offshore H1/3 is ~3 % higher (Ks ≈ 1.03 at h = 0.36 m). Shoaling minimum 0.937 with `n_freq=10` matches the paper.
 
 ---
 
