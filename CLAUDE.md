@@ -23,15 +23,18 @@ goda_wb/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
 │       ├── core.py           # All computation logic (744 lines, 18 functions)
-│       └── constant.py       # Physical constants & model parameters (156 lines)
+│       ├── constant.py       # Physical constants & model parameters (156 lines)
+│       ├── plot.py           # Overlay on Goda (1975) original charts (needs matplotlib, `[plot]` extra)
+│       └── data/goda1975/    # Bundled chart scans (p.96–100, Figs. 50–57, 61, 62; ~380 KB)
 ├── test/
-│   └── test_core.py          # Full test suite (662 lines, 137 test cases)
+│   ├── test_core.py          # Core test suite (662 lines, 137 test cases)
+│   └── test_plot.py          # goda_wb.plot tests (skipped if matplotlib is missing)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
 │   ├── check_shuto.py
-│   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts
-│   ├── goda1975/             # Original chart scans (p.96–97, Figs. 61–62) and comparison output
+│   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts (uses goda_wb.plot)
+│   ├── goda1975/             # Comparison output images (compare_*.png)
 │   ├── draw_on_image.py
 │   ├── draw_on_image2.py
 │   └── run.py
@@ -59,7 +62,7 @@ goda_wb/
 | Testing           | pytest                | >= 9.0.0    |
 | Linting/format    | ruff                  | >= 0.14.9   |
 | Validation (dev)  | scipy                 | >= 1.16.3   |
-| Visualization     | matplotlib            | >= 3.10.8   |
+| Visualization     | matplotlib            | >= 3.10.8 (optional `[plot]` extra + dev) |
 | Notebooks         | ipykernel             | >= 7.1.0    |
 
 ---
@@ -82,7 +85,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 137 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4. All tests must pass before committing.
+Tests live in `test/test_core.py` and `test/test_plot.py` (chart overlay; skipped when matplotlib is not installed). `test_core.py` has 137 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4. All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -133,6 +136,20 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 
 **Computation grid.** Setup must be marched from offshore to onshore over a fine grid. When `dl0` is given, `cal_surf_goda` merges it with the points of `goda_dl0_list` deeper than `min(dl0)`, marches over that merged grid (sorted descending) via the private `_march_profile()`, and returns only the requested rows, in the caller's order. Consequently `dl0` may be in any order, may contain duplicates (identical rows are returned), and a sparse list such as `[0.1, 0.03, 0.01]` gives the same values as the corresponding rows of the default profile. An empty `dl0` raises `ValueError`.
 
+### Chart overlay (`goda_wb.plot`)
+
+Optional module; requires matplotlib (`uv add "goda-wb[plot]"`; included in the dev group). It is **not** imported by `goda_wb/__init__.py`, so the core stays numpy/pandas-only. matplotlib is imported lazily inside the functions.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `plot_on_goda1975` | `(tant, h0l0, column="H1_3", *, ax=None, approx=True, points=None, colors=None, alpha=0.6) → Axes` | Overlay `cal_surf_goda` (solid) / `cal_surf_goda_approx` (dashed) curves and optional `(dh0, H/H0)` points on Figs. 50–57; `h0l0` may be a list |
+| `draw_goda1975_chart` | `(tant, column="H1_3", ax=None, alpha=0.6) → Axes` | Draw the chart image only |
+| `plot_goda1975_approx_fig` | `(fig_no, tants=(1/10, 1/100), *, ax=None, colors=..., alpha=0.6) → Axes` | Overlay on Figs. 61/62 |
+| `chart_to_pixel` | `(x, y, corners, ymax) → (px, py)` | Bilinear map from chart coordinates to image pixels |
+| `chart_index` / `load_chart_image` | | Slope → chart index (`ValueError` unless 1/10, 1/20, 1/30, 1/100); load a bundled scan |
+
+Chart calibration data (`GODA1975_CHARTS`, `GODA1975_APPROX_FIGS`: frame corner pixels per figure) lives in `plot.py`, not `constant.py`, because it describes the bundled images rather than the model. `column` accepts `"H1_3"`, `"H1_250"` or `"Hmax"` (alias of `H1_250`).
+
 ### Output DataFrame Columns
 
 | Column | Description |
@@ -160,7 +177,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 
 ### Module Organization
 
-- Keep all computation logic in `src/goda_wb/core.py`
+- Keep all computation logic in `src/goda_wb/core.py`; plotting against the original charts lives in `src/goda_wb/plot.py`
 - Keep all constants (physical, numerical, model) in `src/goda_wb/constant.py`
 - Do not add new modules without clear necessity — the codebase is intentionally compact
 
@@ -242,7 +259,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_core.py` | Basic API demonstration |
 | `check_goda.py` | Wave transformation plots across steepness values |
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
-| `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners, and reproduces Figs. 61–62 (simplified formulas vs. computed values); writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
+| `compare_goda1975.py` | Uses `goda_wb.plot` to overlay `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners, and reproduces Figs. 61–62 (simplified formulas vs. computed values); writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
