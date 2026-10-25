@@ -253,7 +253,7 @@ cd sample && uv run python check_goda.py
 
 Samples are not covered by CI lint (`ruff` runs on `src/` and `test/` only).
 
-Note: sample scripts use `japanize-matplotlib` for Japanese labels. This is a dev dependency.
+Note: sample scripts use `matplotlib-fontja` for Japanese labels. This is a dev dependency.
 
 ---
 
