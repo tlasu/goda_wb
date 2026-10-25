@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.transforms import Bbox, TransformedBbox
 import numpy as np
-import japanize_matplotlib
+import matplotlib_fontja
 from scipy.ndimage import rotate
 
 

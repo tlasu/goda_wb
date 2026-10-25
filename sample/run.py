@@ -1,7 +1,7 @@
 # %%
 import matplotlib.pyplot as plt
 import numpy as np
-import japanize_matplotlib
+import matplotlib_fontja
 import goda_wb.core as core
 from draw_on_image2 import *
 from matplotlib.ticker import MultipleLocator
