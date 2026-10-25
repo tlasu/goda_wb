@@ -22,16 +22,20 @@ goda_wb/
 ├── src/
 │   └── goda_wb/
 │       ├── __init__.py       # Package init — imports the `core` submodule only
-│       ├── core.py           # All computation logic (744 lines, 18 functions)
-│       └── constant.py       # Physical constants & model parameters (156 lines)
+│       ├── core.py           # Goda (1975) model — all its computation logic (744 lines, 18 functions)
+│       ├── pegbis.py         # Goda (2004) gradational breaking model PEGBIS, 1-D cross-shore (390 lines)
+│       └── constant.py       # Physical constants & model parameters (181 lines)
 ├── test/
-│   └── test_core.py          # Full test suite (662 lines, 137 test cases)
+│   ├── test_core.py          # Test suite for core (662 lines, 137 test cases)
+│   └── test_pegbis.py        # Test suite for pegbis (255 lines, 40 test cases)
 ├── sample/                   # Usage examples and visualization scripts
 │   ├── check_core.py
 │   ├── check_goda.py
 │   ├── check_shuto.py
 │   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts
 │   ├── goda1975/             # Original chart scans (p.96–97, Figs. 61–62) and comparison output
+│   ├── compare_pegbis.py     # PEGBIS vs Goda (1975) on uniform slopes, and Kweon's step (Fig. 11)
+│   ├── pegbis/               # compare_pegbis.py output
 │   ├── draw_on_image.py
 │   ├── draw_on_image2.py
 │   └── run.py
@@ -82,7 +86,7 @@ uv sync
 uv run pytest -v
 ```
 
-Tests live in `test/test_core.py`. There are 137 test cases covering all public API functions, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4. All tests must pass before committing.
+Tests live in `test/test_core.py` (137 cases, covering all public API functions of `core`, including a comparison with values read from Goda (1975) Figs. 50–57 and Table-4) and `test/test_pegbis.py` (40 cases for `pegbis`). All tests must pass before committing.
 
 ### Linting and Formatting
 
@@ -144,6 +148,20 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 | `aks` | Shoaling coefficient |
 | `d`, `H1_3_dim`, … | Dimensional values (only when `dim=True`) |
 
+### PEGBIS (`goda_wb.pegbis`)
+
+A separate model: Goda (2004) ECOH/YG No.2 Ver.5, restricted to 1-D cross-shore, normal incidence. Import with `import goda_wb.pegbis as pegbis`; it is not re-exported either. It reuses only `core.wave()` and shares no code path with `cal_surf_goda`.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `cal_surf_pegbis` | `(x, h, H0, T, fw=0.01, M=831, n_freq=1) → DataFrame` | Arbitrary profile; `x` [m] increasing shoreward, `h` [m] > 0. Columns `x`, `h`, `slope`, `Ks`, `H1_250` … `H1_3`, `Hrms`, `Hmean` [m]. `fw` scalar or per-point array |
+| `cal_surf_pegbis_slope` | `(tant, h0l0, dl0=None, fw=0.01, M=831, n_freq=1) → DataFrame` | Uniform slope, dimensionless (L0 = 1, start at h/L0 = max(0.5, max(dl0))); columns as `cal_surf_goda` (ratios to H0') plus `Hrms`, `Hmean`; no `etal0` |
+| `gradational_breaker_index` | `(h, L0, slope, Hm, H1)` | κm, eq. (7)/(8); for slope <= 0 eq. (11) constants with I = 0; h/L0 capped at 0.2 |
+| `breaking_decay_coef` | `(a, h, kappa, slope)` | f_Db, eq. (4) with α_b = 3/8 (0.3 + 2.5 max(I, 0)) (appendix eq. 付1) |
+| `bottom_friction_coef` | `(a, h, kh, fw)` | f_Df, eq. (14) |
+| `swart_fw` | `(ks, am) → float` | Swart (1974) friction factor, capped at 0.30 |
+| `wave_levels` / `spectral_periods` | `(H0, M)` / `(T, n_freq)` | Equal-probability Rayleigh levels, eq. (5); equal-energy frequency split, eq. (15) with Tp = 1.05 T1/3 |
+
 ---
 
 ## Code Conventions
@@ -160,7 +178,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 
 ### Module Organization
 
-- Keep all computation logic in `src/goda_wb/core.py`
+- Keep all computation logic of the Goda (1975) model in `src/goda_wb/core.py`, and of PEGBIS in `src/goda_wb/pegbis.py`
 - Keep all constants (physical, numerical, model) in `src/goda_wb/constant.py`
 - Do not add new modules without clear necessity — the codebase is intentionally compact
 
@@ -189,6 +207,7 @@ All functions are in `goda_wb.core`. They are **not** re-exported from the top-l
 | `ETAI_MAX_RATIO` | 2.0 | Cap on the spacing ratio used by `etai()` extrapolation |
 | `INVERSE_H0L0_MIN` / `INVERSE_H0L0_MAX` | 1e-4 / 0.1 | H0/L0 search bracket of `cal_h0_from_height()`; targets outside it raise `ValueError` |
 | `INVERSE_TOL` | 1e-6 | Convergence tolerance on log(H0/L0) in `cal_h0_from_height()` |
+| `PEGBIS_*` | — | PEGBIS constants: `CB`/`BETA0`/`P` = 0.080/0.016/0.333 (eq. 8), `CB2`/`BETA02`/`P2` = 0.080/0.016/0.667 (eq. 11; paper gives Cb' = 0.070–0.080), `LEVELS` = 831, `FW` = 0.01, `BREAKING_DL0` = 0.2, `SLOPE_DISTANCE_L0` = 0.1, `TP_T13` = 1.05, internal grid limits `MAX_DH_RATIO`/`MAX_DX_H_RATIO`/`MAX_DX_L_RATIO` |
 | `goda_dl0_list` | 113 values | Default d/L₀ evaluation points (1e-9–1.0, descending) |
 | `GAUSS_HERMITE_ABSCISSAE/WEIGHTS` | 8 points | Discretized normal distribution for surf beat (see note below) |
 
@@ -231,6 +250,8 @@ uv run pytest -v test/test_core.py::test_function_name
 
 7. **Inverse calculation**: `cal_h0_from_height()` fixes T (so d/L0 is fixed) and solves `H(H0) = H` on log(H0/L0) with the Illinois (modified regula falsi) method, using `cal_surf_goda` or `cal_surf_goda_approx` as the forward model; the wave height is monotonically increasing in H0. One forward evaluation of the full model takes ~0.1 s, so one inversion takes about 1 s. Inside the surf zone H saturates with H0, so the inverse is ill-conditioned there.
 
+8. **PEGBIS**: with normal incidence the parabolic equation reduces, per level m and frequency component n, to `da/dx = -(1/2) a d(ln cg)/dx - f_D a`. `cal_surf_pegbis` marches it with Heun's method on an internal grid (input points plus subdivisions limited by `PEGBIS_MAX_*`) from the offshore boundary, where heights are linearly shoaled from deep water (the boundary must be outside the surf zone). κm always uses the L0 of T1/3, also for spectral components. Level heights combine components as rms and are sorted before computing H1/n (fractional level weighting); Hmax is represented by `H1_250` as in the paper. No setup, surf beat, nonlinear shoaling, refraction or diffraction. Known differences from the paper: on slope 1/10, Hmax up to ~0.1 H0' lower than the paper's PEGBIS points; on Kweon's step (Fig. 11), stable Hmax/H1/10/H1/3 are 7–8 % lower and Hrms/Hmean 15–19 % lower than the paper's computed values. Shoaling minimum 0.937 with `n_freq=10` matches the paper.
+
 ---
 
 ## Sample Scripts
@@ -243,6 +264,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_goda.py` | Wave transformation plots across steepness values |
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
 | `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners, and reproduces Figs. 61–62 (simplified formulas vs. computed values); writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
+| `compare_pegbis.py` | Compares PEGBIS (`n_freq=10`) with `cal_surf_goda` on slopes 1/10–1/100 (paper Figs. 6–9) and computes Kweon's horizontal-step case (Fig. 11); writes `pegbis/compare_slope.png`, `pegbis/kweon_step.png` |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
@@ -287,5 +309,7 @@ Note: sample scripts use `matplotlib-fontja` for Japanese labels. This is a dev 
 
 - Goda, Y. (1975). Irregular wave deformation in the surf zone. *Coastal Engineering in Japan*, 18, 13–26.
 - 合田良実 (1975). 浅海域における波浪の砕波変形. 港湾技術研究所報告, 14(3). ([PDF](https://www.pari.go.jp/PDF/vol014-no03-03.pdf))
+- 合田良実 (2004). 不規則波浪変形計算における段階的砕波係数の導入について (Ver.5). ECOH/YG 技術論文 No.2. (https://www.ecoh.co.jp/goda/849/) — PEGBIS
+- 合田良実 (2003). 段階的砕波変形モデルによる人工リーフの波浪減殺特性の解析 (Ver.3). ECOH/YG 技術論文 No.3. (https://www.ecoh.co.jp/goda/847/) — bottom friction, reef friction fw ≈ 0.15
 - Project README (Japanese): `README.md`
 - Technical skill sheet: `skill.md`
