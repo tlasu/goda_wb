@@ -28,6 +28,7 @@ from goda_wb.constant import (
     PEGBIS_CB_BY_LEVELS,
     PEGBIS_FW,
     PEGBIS_H1_MIN_RATIO,
+    PEGBIS_KAPPA_SLOPE_COEF,
     PEGBIS_LEVELS,
     PEGBIS_MAX_DH_RATIO,
     PEGBIS_MAX_DX_H_RATIO,
@@ -130,6 +131,8 @@ def gradational_breaker_index(
 
     κm は砕波限界振幅と水深の比で、振幅 a が κm h を超えると砕波減衰が働く。
     I <= 0 では定数を Cb', β0', p' に替え、I を含む項は I = 0 として評価する。
+    β0 項の勾配係数は論文の印刷値 30 ではなく、論文の計算結果に合わせて較正した 60 を用いる
+    （constant.PEGBIS_KAPPA_SLOPE_COEF）。
     h/L0 > 0.2 では h/L0 = 0.2 における値を用いる。
 
     Args:
@@ -150,12 +153,16 @@ def gradational_breaker_index(
         cb, beta0, p, i = cb2, PEGBIS_BETA02, PEGBIS_P2, 0.0
     hh = np.minimum(h, PEGBIS_BREAKING_DL0 * L0)
     first = cb * L0 / hh * (1.0 - np.exp(-1.5 * np.pi * hh / L0 * (1.0 + 15.0 * i**2.5)))
-    second = beta0 * Hm / hh * (Hm / L0) ** (-0.38) * np.exp(30.0 * i**2)
+    second = beta0 * Hm / hh * (Hm / L0) ** (-0.38) * np.exp(PEGBIS_KAPPA_SLOPE_COEF * i**2)
     return (first + second) * (Hm / H1) ** p
 
 
 def breaking_decay_coef(
-    a: float | np.ndarray, h: float, kappa: float | np.ndarray, slope: float
+    a: float | np.ndarray,
+    h: float,
+    kappa: float | np.ndarray,
+    slope: float,
+    alpha_b: float | None = None,
 ) -> float | np.ndarray:
     """砕波による減衰係数 f_Db（式 (4)、α_b は付記の式 (付 1)）。
 
@@ -164,11 +171,14 @@ def breaking_decay_coef(
         h: 水深 [m]
         kappa: 段階的砕波係数 κm
         slope: 海底勾配 I。α_b = 3/8 (0.3 + 2.5 I) の I は負のとき 0 とする
+        alpha_b: 定数 α_b を直接与える場合の値。None の場合は上の勾配の関数（Ver.5）。
+            論文本文の図（図-6~9, 11 など）は Ver.3 以前の一定値 0.125 で計算されている
 
     Returns:
         減衰係数 f_Db [1/m]
     """
-    alpha_b = 0.375 * (0.3 + 2.5 * max(slope, 0.0))
+    if alpha_b is None:
+        alpha_b = 0.375 * (0.3 + 2.5 * max(slope, 0.0))
     ratio = a / (kappa * h)
     return np.where(ratio > 1.0, alpha_b / (2.0 * h) * np.sqrt(np.maximum(ratio**2 - 1.0, 0)), 0.0)
 
@@ -279,6 +289,7 @@ def cal_surf_pegbis(
     n_freq: int = 1,
     cb: float | None = None,
     cb2: float | None = None,
+    alpha_b: float | None = None,
 ) -> pd.DataFrame:
     """任意の断面地形における不規則波の砕波変形（PEGBIS の岸沖方向 1 次元版）。
 
@@ -298,6 +309,8 @@ def cal_surf_pegbis(
         cb: 段階的砕波係数の定数 Cb。None の場合は M に応じた値 (default_cb)。
             論文は現地海岸への適用には Cb = 0.070 を推奨している（9 章 (5)）
         cb2: 海底勾配 0 以下で用いる Cb'。None の場合は 0.080 × Cb / 0.080 の比例配分
+        alpha_b: 砕波減衰の定数 α_b。None の場合は海底勾配の関数（付記の式 (付 1)）。
+            論文本文の図を再現するときは Ver.3 以前の 0.125 を与える
 
     Returns:
         各入力点の結果を含む DataFrame。
@@ -322,6 +335,8 @@ def cal_surf_pegbis(
         cb = default_cb(M)
     if cb2 is None:
         cb2 = PEGBIS_CB2 * cb / PEGBIS_CB
+    if alpha_b is not None and alpha_b <= 0:
+        raise ValueError(f"α_b は正の値でなければなりません: {alpha_b}")
     if cb <= 0 or cb2 <= 0:
         raise ValueError(f"Cb, Cb' は正の値でなければなりません: cb={cb}, cb2={cb2}")
     levels = wave_levels(H0, M)
@@ -340,7 +355,7 @@ def cal_surf_pegbis(
 
     def decay(amp: np.ndarray, j: int, kh: np.ndarray) -> np.ndarray:
         kappa = gradational_breaker_index(hf[j], L0, slope[j], levels[:, None], levels[0], cb, cb2)
-        fd = breaking_decay_coef(amp, hf[j], kappa, slope[j])
+        fd = breaking_decay_coef(amp, hf[j], kappa, slope[j], alpha_b)
         if fwf[j] > 0:
             fd = fd + bottom_friction_coef(amp, hf[j], kh[None, :], fwf[j])
         return fd
@@ -385,6 +400,7 @@ def cal_surf_pegbis_slope(
     n_freq: int = 1,
     cb: float | None = None,
     cb2: float | None = None,
+    alpha_b: float | None = None,
 ) -> pd.DataFrame:
     """一様勾配斜面における PEGBIS の無次元計算（合田 (1975) のモデルとの比較用）。
 
@@ -400,6 +416,7 @@ def cal_surf_pegbis_slope(
         n_freq: 周波数成分の数
         cb: 段階的砕波係数の定数 Cb（cal_surf_pegbis と同じ）
         cb2: 海底勾配 0 以下で用いる Cb'（cal_surf_pegbis と同じ）
+        alpha_b: 砕波減衰の定数 α_b（cal_surf_pegbis と同じ）
 
     Returns:
         各水深における波高比 (H/H0') を含む DataFrame。
@@ -421,7 +438,9 @@ def cal_surf_pegbis_slope(
     grid = sorted(set(targets) | {start}, reverse=True)
     x = [(start - v) / tant for v in grid]
     T = float(np.sqrt(pi2 / g))  # L0 = 1
-    df = cal_surf_pegbis(x, grid, h0l0, T, fw=fw, M=M, n_freq=n_freq, cb=cb, cb2=cb2)
+    df = cal_surf_pegbis(
+        x, grid, h0l0, T, fw=fw, M=M, n_freq=n_freq, cb=cb, cb2=cb2, alpha_b=alpha_b
+    )
 
     cols = list(_REPRESENTATIVE) + ["Hrms", "Hmean"]
     res = df[cols] / h0l0

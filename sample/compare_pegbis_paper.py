@@ -98,7 +98,8 @@ def draw_fig11():
     img = mpimg.imread(IMG_DIR / "ecoh2-07.png")
     x = np.linspace(-4.0, 4.0, 161)
     h = np.interp(x, [-4.0, -3.0, -1.0, 0.0, 4.0], [0.36, 0.36, 0.16, 0.11, 0.11])
-    df = pegbis.cal_surf_pegbis(x, h, 0.0879, 2.21, n_freq=10)
+    # 図-11 は論文本文の図で Ver.3 以前の α_b = 0.125 で計算されている。M は論文の現地計算と同じ 301
+    df = pegbis.cal_surf_pegbis(x, h, 0.0879, 2.21, n_freq=10, alpha_b=0.125, M=301)
     c = FIG11["corners"]
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.imshow(img, cmap="gray", alpha=0.6)

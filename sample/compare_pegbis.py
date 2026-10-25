@@ -38,7 +38,8 @@ fig.savefig("pegbis/compare_slope.png", dpi=120)
 # 権の水平ステップ実験（論文 図-11）
 x = np.linspace(-4.0, 4.0, 81)
 h = np.interp(x, [-4.0, -3.0, -1.0, 0.0, 4.0], [0.36, 0.36, 0.16, 0.11, 0.11])
-df = pegbis.cal_surf_pegbis(x, h, 0.0879, 2.21, n_freq=10)
+# 論文本文の図-11 は Ver.3 以前の α_b = 0.125 で計算されている。M は論文の現地計算と同じ 301
+df = pegbis.cal_surf_pegbis(x, h, 0.0879, 2.21, n_freq=10, alpha_b=0.125, M=301)
 fig, ax = plt.subplots(figsize=(7, 4))
 for col in ["H1_250", "H1_10", "H1_3", "Hrms", "Hmean"]:
     ax.plot(df["x"], df[col], label=col)

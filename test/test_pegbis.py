@@ -173,6 +173,50 @@ def test_swart_fw() -> None:
 
 DH0 = [3.0, 2.0, 1.5, 1.0, 0.5]
 
+# 論文 付図-4~7（Ver.5 の PEGBIS、M = 831, 一方向波, 周波数成分 10）の記号を
+# 300 dpi のページ画像からデジタイズした値。h/H0' = 0.5, 1.0, …, 3.5 に対する H/H0'
+# （記号の判別ができなかった点は None）
+PEGBIS_DH0 = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
+PEGBIS_FIGS = {
+    1 / 10: {
+        ("H1_250", 0.02): [0.90, 1.36, 1.68, 1.86, 1.84, 1.80, 1.77],
+        ("H1_250", 0.04): [0.80, 1.19, 1.47, 1.63, 1.67, 1.68, 1.69],
+        ("H1_3", 0.02): [0.64, None, 1.09, 1.06, 1.02, 1.00, 0.98],
+        ("H1_3", 0.04): [0.57, 0.85, 0.95, 0.95, 0.94, None, None],
+    },
+    1 / 20: {
+        ("H1_250", 0.02): [None, 1.08, 1.44, 1.72, 1.83, 1.79, 1.77],
+        ("H1_250", 0.04): [None, 0.97, 1.27, 1.51, 1.64, 1.67, 1.69],
+        ("H1_3", 0.02): [None, 0.81, 1.04, 1.05, 1.02, 1.00, 0.98],
+        ("H1_3", 0.04): [None, 0.73, 0.92, 0.95, 0.94, None, None],
+    },
+    1 / 30: {
+        ("H1_250", 0.02): [None, 0.99, 1.34, 1.66, 1.82, 1.79, 1.77],
+        ("H1_250", 0.04): [None, 0.90, 1.20, 1.47, 1.63, 1.66, 1.69],
+        ("H1_3", 0.02): [None, 0.75, 1.00, 1.05, 1.03, 1.00, 0.98],
+        ("H1_3", 0.04): [None, 0.69, 0.90, 0.94, 0.94, 0.93, None],
+    },
+    1 / 100: {
+        ("H1_250", 0.02): [None, 0.89, 1.22, 1.53, 1.80, 1.78, 1.76],
+        ("H1_250", 0.04): [None, None, 1.10, 1.37, 1.60, 1.63, 1.68],
+        ("H1_3", 0.02): [None, 0.68, 0.95, 1.04, 1.02, 1.00, 0.98],
+        ("H1_3", 0.04): [None, 0.63, 0.86, None, 0.94, 0.93, None],
+    },
+}
+
+
+@pytest.mark.parametrize("tant", list(PEGBIS_FIGS))
+@pytest.mark.parametrize("h0l0", [0.02, 0.04])
+def test_slope_matches_paper_appendix_figures(tant: float, h0l0: float) -> None:
+    """一様勾配斜面の Hmax, H1/3 が論文 付図-4~7 の計算値と 0.045 以内で一致すること。"""
+    res = pegbis.cal_surf_pegbis_slope(tant, h0l0, [v * h0l0 for v in PEGBIS_DH0], n_freq=10)
+    for (col, s), ref in PEGBIS_FIGS[tant].items():
+        if s != h0l0:
+            continue
+        for value, expected in zip(res[col], ref, strict=True):
+            if expected is not None:
+                assert value == pytest.approx(expected, abs=0.045)
+
 
 @pytest.mark.parametrize("tant", [1 / 30, 1 / 100])
 @pytest.mark.parametrize("h0l0", [0.02, 0.04])
@@ -245,20 +289,37 @@ def test_offshore_boundary_is_linear_shoaling() -> None:
 
 
 def test_horizontal_step_matches_paper_calculation() -> None:
-    """水平ステップ上の安定波高が論文 図-11 の計算値と概ね一致すること。
+    """権の水平ステップ実験（論文 図-11）の計算値を再現すること。
 
-    図-11 の計算値（水平床上）は Hmax ≈ 0.101, H1/10 ≈ 0.078, H1/3 ≈ 0.065 m。
-    本実装は 5~6 % 小さい（Hrms, Hmean は 12~14 % 小さい）。沖側 (h = 0.36 m) の H1/3 は
-    論文の 0.088 m に対し、浅水係数 Ks ≈ 1.03 の分だけ大きい。
+    図-11 は論文本文の図で、Ver.3 以前の α_b = 0.125 で計算されている。波高レベル数は論文の
+    現地計算と同じ M = 301 とする。論文の計算値は、水平床上で Hmax ≈ 0.101, H1/10 ≈ 0.078,
+    H1/3 ≈ 0.065 m、x = 0 で H1/3 ≈ 0.096, Hrms ≈ 0.071 m、Hmax の極大は x ≈ -1.1 m。
+    沖側 (h = 0.36 m) の H1/3 は論文の 0.088 m に対し、浅水係数 Ks ≈ 1.03 の分だけ大きい。
     """
-    df = pegbis.cal_surf_pegbis(KWEON_X, KWEON_H, 0.0879, 2.21, n_freq=10)
+    x = np.linspace(-4.0, 4.0, 81)
+    h = np.interp(x, KWEON_X, KWEON_H)
+    df = pegbis.cal_surf_pegbis(x, h, 0.0879, 2.21, n_freq=10, alpha_b=0.125, M=301)
     flat = df[df["x"] >= 3.0]
     assert np.allclose(flat["H1_3"], flat["H1_3"].iloc[0], rtol=0.01)
     last = df.iloc[-1]
-    assert last["H1_250"] == pytest.approx(0.101, rel=0.12)
-    assert last["H1_10"] == pytest.approx(0.078, rel=0.12)
-    assert last["H1_3"] == pytest.approx(0.065, rel=0.12)
+    assert last["H1_250"] == pytest.approx(0.101, rel=0.03)
+    assert last["H1_10"] == pytest.approx(0.078, rel=0.03)
+    assert last["H1_3"] == pytest.approx(0.065, rel=0.03)
+    at0 = df[np.isclose(df["x"], 0.0)].iloc[0]
+    assert at0["H1_3"] == pytest.approx(0.096, rel=0.03)
+    assert at0["Hrms"] == pytest.approx(0.071, rel=0.03)
+    assert -1.3 <= df.loc[df["H1_250"].idxmax(), "x"] <= -1.0
     assert df.loc[0, "H1_3"] == pytest.approx(0.088, rel=0.05)
+
+
+def test_alpha_b_option() -> None:
+    """α_b を小さくすると砕波帯内の波高が大きくなり、0 以下は ValueError となること。"""
+    dl0 = [0.02, 0.01]
+    new = pegbis.cal_surf_pegbis_slope(0.1, 0.02, dl0)
+    old = pegbis.cal_surf_pegbis_slope(0.1, 0.02, dl0, alpha_b=0.125)
+    assert np.all(old["H1_3"] > new["H1_3"])
+    with pytest.raises(ValueError):
+        pegbis.cal_surf_pegbis_slope(0.1, 0.02, dl0, alpha_b=0.0)
 
 
 def test_friction_reduces_wave_height() -> None:
