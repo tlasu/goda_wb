@@ -35,7 +35,8 @@ goda_wb/
 │   ├── compare_goda1975.py   # Overlay results on Goda (1975) original charts
 │   ├── goda1975/             # Original chart scans (p.96–97, Figs. 61–62) and comparison output
 │   ├── compare_pegbis.py     # PEGBIS vs Goda (1975) on uniform slopes, and Kweon's step (Fig. 11)
-│   ├── pegbis/               # compare_pegbis.py output
+│   ├── compare_pegbis_paper.py # Overlay PEGBIS on the paper's 付図-4〜7 and Fig. 11 (page images not committed)
+│   ├── pegbis/               # compare_pegbis.py / compare_pegbis_paper.py output
 │   ├── draw_on_image.py
 │   ├── draw_on_image2.py
 │   └── run.py
@@ -266,6 +267,7 @@ Located in `sample/` — not part of the installable package, intended for explo
 | `check_shuto.py` | Shoaling coefficient curves (`shoal()`) for comparison with Shuto's shoaling chart |
 | `compare_goda1975.py` | Overlays `H1_3` / `H1_250` (solid) and the simplified formulas (dashed) on Goda (1975) Figs. 50–57 using calibrated chart-frame corners, and reproduces Figs. 61–62 (simplified formulas vs. computed values); writes `goda1975/compare_*.png`. Fig. 52 (slope 1/30) is calibrated on its grid instead, because its bottom frame line and y labels are drawn 0.03–0.06 too high relative to the grid the curves were plotted on |
 | `compare_pegbis.py` | Compares PEGBIS (`n_freq=10`) with `cal_surf_goda` on slopes 1/10–1/100 (paper Figs. 6–9) and computes Kweon's horizontal-step case (Fig. 11); writes `pegbis/compare_slope.png`, `pegbis/kweon_step.png` |
+| `compare_pegbis_paper.py` | Overlays `cal_surf_pegbis` on the paper's p.19 付図-4〜7 and p.7 Fig. 11, calibrated on chart frames / gridlines of 300 dpi page images `pegbis/ecoh2-19.png`, `pegbis/ecoh2-07.png` (made with `pdftoppm` from the ECOH PDF; not committed); writes `pegbis/overlay_slope.png`, `pegbis/overlay_fig11.png` |
 | `run.py` | Exploratory notebook-style plots (currently references undefined names and does not run as-is) |
 | `draw_on_image.py` / `draw_on_image2.py` | Overlay results on reference images |
 
