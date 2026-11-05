@@ -14,6 +14,9 @@ pip install git+https://github.com/tlasu/goda_wb.git
 
 # または uv を使用
 uv add git+https://github.com/tlasu/goda_wb.git
+
+# 原図との比較（goda_wb.plot）も使う場合は matplotlib 付きで
+uv add "goda-wb[plot] @ git+https://github.com/tlasu/goda_wb.git"
 ```
 
 ## 使用方法
@@ -171,7 +174,27 @@ print(f"波長: {L} [m]")
 
 ## 原図との比較
 
-合田 (1975) の算定図（図-50〜53：有義波高、図-54〜57：最高波高 Hmax ≒ H1/250）に計算結果（実線）と略算式（破線）を重ねて比較できます。原図は港湾技術研究所報告 14(3) p.96〜97 のスキャン画像です。
+合田 (1975) の算定図（図-50〜53：有義波高、図-54〜57：最高波高 Hmax ≒ H1/250）に計算結果（実線）と略算式（破線）を重ねて比較できます。原図は港湾技術研究所報告 14(3) p.96〜100 のスキャン画像で、パッケージに同梱しています。matplotlib が必要です（`goda-wb[plot]`）。
+
+```python
+import matplotlib.pyplot as plt
+import goda_wb.plot as gplot
+
+# 勾配 1/100 の図-53 に H0'/L0 = 0.02 の曲線と点 (h/H0', H1/3/H0') を重ねる
+ax = gplot.plot_on_goda1975(tant=0.01, h0l0=0.02, column="H1_3", points=[(2.9, 1.02)])
+plt.show()
+```
+
+| 関数 | 内容 |
+|---|---|
+| `plot_on_goda1975(tant, h0l0, column="H1_3", *, ax=None, approx=True, points=None, colors=None, alpha=0.6)` | 算定図（図-50〜57）に厳密計算（実線）・略算式（破線）・任意の点を重ねる。`h0l0` は複数指定可 |
+| `draw_goda1975_chart(tant, column="H1_3", ax=None, alpha=0.6)` | 算定図だけを描く |
+| `plot_goda1975_approx_fig(fig_no, tants=(1/10, 1/100), *, ax=None, colors=..., alpha=0.6)` | 図-61・62（略算式と計算値の比較）に重ねる |
+| `chart_to_pixel(x, y, corners, ymax)` | 図の座標 (h/H0', H/H0') を原図の画素座標へ変換する |
+
+`tant` は算定図のある 1/10, 1/20, 1/30, 1/100 のみ、`column` は `"H1_3"` または `"H1_250"`（`"Hmax"` も可）です。それ以外は `ValueError` になります。
+
+4 勾配 × 6 波形勾配をまとめて描くサンプル:
 
 ```bash
 cd sample && uv run python compare_goda1975.py
@@ -194,6 +217,7 @@ cd sample && uv run python compare_goda1975.py
 - Python >= 3.11
 - numpy >= 2.3.4
 - pandas >= 2.3.3
+- matplotlib >= 3.10.8（`goda_wb.plot` を使う場合のみ。`[plot]` extras）
 
 ## 開発
 
